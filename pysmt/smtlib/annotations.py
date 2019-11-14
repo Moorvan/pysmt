@@ -98,6 +98,26 @@ class Annotations(object):
                         res.append(f)
         return set(res)
 
+    
+    def all_annotations(self, annotation=None):
+        res = dict()
+        for f, amap in iteritems(self._annotations):
+            for a, lst in iteritems(amap):
+                if annotation is not None:
+                    if annotation != a:
+                        continue
+                for v in lst:
+                    if not str(a) in res:
+                        res[str(a)] = dict()
+                    if not str(v) in res[str(a)]:
+                        res[str(a)][str(v)] = list()
+                    res[str(a)][str(v)].append(f)
+        return res
+    
+
+    def get_annotations(self):
+        return self._annotations
+    
 
     def __contains__(self, formula):
         """Checks if formula has at least one annotation"""

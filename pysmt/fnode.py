@@ -60,8 +60,13 @@ from pysmt.exceptions import (PysmtValueError, PysmtModeError,
                               UnsupportedOperatorError)
 
 
+FNodeData = collections.namedtuple("FNodeData", [
+    "is_pre", 
+    "is_next"
+])
+
 FNodeContent = collections.namedtuple("FNodeContent",
-                                      ["node_type", "args", "payload"])
+                                      ["node_type", "args", "payload", "data"])
 
 class FNode(object):
     r"""FNode represent the basic structure for representing a formula.

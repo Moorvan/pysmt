@@ -109,15 +109,15 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
 
         for (i, k) in enumerate(subs):
             v = subs[k]
-            # Check that substitutions are terms
-            if not k.is_term():
-                raise PysmtTypeError(
-                    "Only terms should be provided as substitutions." +
-                    " Non-term '%s' found." % k)
-            if not v.is_term():
-                raise PysmtTypeError(
-                    "Only terms should be provided as substitutions." +
-                    " Non-term '%s' found." % v)
+#             # Check that substitutions are terms
+#             if not k.is_term():
+#                 raise PysmtTypeError(
+#                     "Only terms should be provided as substitutions." +
+#                     " Non-term '%s' found." % k)
+#             if not v.is_term():
+#                 raise PysmtTypeError(
+#                     "Only terms should be provided as substitutions." +
+#                     " Non-term '%s' found." % v)
             # Check that substitutions belong to the current formula manager
             if k not in self.manager:
                 raise PysmtTypeError(

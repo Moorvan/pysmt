@@ -39,7 +39,7 @@ import pysmt.typing as types
 import pysmt.operators as op
 
 
-from pysmt.fnode import FNode, FNodeContent
+from pysmt.fnode import FNode, FNodeContent, FNodeData
 from pysmt.exceptions import UndefinedSymbolError, PysmtValueError,PysmtTypeError
 from pysmt.walkers.identitydag import IdentityDagWalker
 from pysmt.constants import Fraction
@@ -54,6 +54,9 @@ from pysmt.constants import (is_pysmt_fraction,
 
 class FormulaManager(object):
     """FormulaManager is responsible for the creation of all formulae."""
+
+    def init_data(self):
+        return FNodeData(-1, -1)
 
     def __init__(self, env=None):
         self.env = env
@@ -86,7 +89,7 @@ class FormulaManager(object):
         return self._do_type_check(formula)
 
     def create_node(self, node_type, args, payload=None):
-        content = FNodeContent(node_type, args, payload)
+        content = FNodeContent(node_type, args, payload, self.init_data())
         if content in self.formulae:
             return self.formulae[content]
         else:
