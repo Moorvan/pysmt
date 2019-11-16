@@ -18,6 +18,7 @@
 from __future__ import absolute_import
 
 from pysmt.exceptions import SolverAPINotFound
+from z3.z3core import Z3_inc_ref
 
 try:
     import z3
@@ -77,6 +78,61 @@ class Z3Model(Model):
         Model.__init__(self, environment)
         self.z3_model = z3_model
         self.converter = Z3Converter(environment, z3_model.ctx)
+    
+    def get_diagram_sorts(self):
+#         print(self.z3_model)
+#         print(self.z3_model.sexpr())
+#         print(self.z3_model.decls())
+#         for s in self.z3_model.sorts():
+#             print("%s -> %s" % (s, self.z3_model.get_universe(s)))
+#         for d in self.z3_model.decls():
+#             print("%s -> %s" % (d, self.z3_model.get_interp(d)))
+        
+        sorts = dict()
+        for s in self.z3_model.sorts():
+            universe = self.z3_model.get_universe(s)
+            pysort = self.converter._z3_to_type(s)
+            
+            for v in universe:
+                pyv = self.converter.back(v)
+#                 print("%s of type %s\n" % (pyv, pyv.symbol_type()))
+                if not(pysort in sorts):
+                    sorts[pysort] = list()
+                sorts[pysort].append(pyv)
+                self.converter.z3MemoizeUniverse(pyv, v)
+        return sorts
+
+    def get_diagram_funcs(self):
+        consts = dict()
+        funcs = dict()
+        for d in self.z3_model.decls():
+            print("func: %s" % d)
+            if d.arity() == 0:
+                pyconst = self.converter._back_single_decl(d)
+#                 print("%s of type %s\n" % (pyconst, pyconst.symbol_type()))
+                
+                if pyconst.symbol_type().is_int_type():
+                    pyvalue = self.get_value(pyconst)
+                else:
+                    value = self.z3_model.get_interp(d)
+                    pyvalue = self.converter.back(value)
+                consts[pyconst] = [pyvalue]
+                print("%s <- %s" % (pyconst, pyvalue))
+            else:
+                pyfun = self.converter._back_single_decl(d)
+                value = self.z3_model.get_interp(d)
+                print("%s <- %s" % (pyfun, value))
+                
+                arity = value.arity()
+                num_entries = value.num_entries()
+                print(arity)
+                print(num_entries)
+                for i in range(num_entries):
+                    value_i = value.entry(i)
+                    print("%d: %s" % (i, value_i))
+                value_else = value.else_value()
+                print("else: %s" % value_else)                
+        return consts, funcs
 
     def get_value(self, formula, model_completion=True):
         titem = self.converter.convert(formula)
@@ -274,7 +330,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                 print("%s = %s" % (var.symbol_name(), self.get_value(var)))
 
     def get_value(self, item):
-        self._assert_no_function_type(item)
+#         self._assert_no_function_type(item)
 
         titem = self.converter.convert(item)
         z3_res = self.z3.model().eval(titem, model_completion=True)
@@ -376,6 +432,9 @@ class Z3Converter(Converter, DagWalker):
         self._z3_func_decl_cache = {}
         return
 
+    def z3MemoizeUniverse(self, key, value):
+        self.memoization[key] = value.as_ast()
+        
     def z3BitVecSort(self, width):
         """Return the z3 BitVecSort for the given width."""
         try:
@@ -430,8 +489,11 @@ class Z3Converter(Converter, DagWalker):
                 return z3.ArrayRef
             elif type_.is_bv_type():
                 return z3.BitVecRef
+            elif type_.is_function_type():
+                return z3.FuncDeclRef
             else:
-                raise NotImplementedError(formula)
+                return z3.AstRef
+#                 raise NotImplementedError(formula)
         elif formula.node_type() in op.ARRAY_OPERATORS:
             return z3.ArrayRef
         elif formula.is_ite():
@@ -482,6 +544,15 @@ class Z3Converter(Converter, DagWalker):
                 # we already visited the node, nothing else to do
                 pass
         return self._back_memoization[(askey(expr), model)]
+
+    def _back_single_decl(self, decl, args=[]):
+        try:
+            fsymbol = self.mgr.get_symbol(decl.name())
+            return fsymbol
+        except UndefinedSymbolError:
+            print("decl: %s not found" % decl)
+            return self.back(decl(args))
+        
 
     def _back_single_term(self, expr, args, model=None):
         assert z3.is_expr(expr)
@@ -546,11 +617,12 @@ class Z3Converter(Converter, DagWalker):
                 try:
                     return self.mgr.get_symbol(str(expr))
                 except UndefinedSymbolError:
-                    import warnings
+#                     import warnings
                     symb_type = self._z3_to_type(expr.sort())
-                    warnings.warn("Defining new symbol: %s" % str(expr))
-                    return self.mgr.FreshSymbol(symb_type,
-                                                template="__z3_%d")
+                    return self.mgr.Symbol(str(expr), symb_type)
+#                     warnings.warn("Defining new symbol: %s" % str(expr))
+#                     return self.mgr.FreshSymbol(symb_type,
+#                                                 template="__z3_%d")
         elif z3.is_function(expr):
             # This needs to be after we try to convert regular Symbols
             fsymbol = self.mgr.get_symbol(expr.decl().name())
@@ -613,25 +685,30 @@ class Z3Converter(Converter, DagWalker):
 
     def walk_symbol(self, formula, **kwargs):
         symbol_type = formula.symbol_type()
-        sname = formula.symbol_name()
-        z3_sname = z3.Z3_mk_string_symbol(self.ctx.ref(), sname)
-        if symbol_type.is_bool_type():
-            sort_ast = self.z3BoolSort.ast
-        elif symbol_type.is_real_type():
-            sort_ast = self.z3RealSort.ast
-        elif symbol_type.is_int_type():
-            sort_ast = self.z3IntSort.ast
-        elif symbol_type.is_array_type():
-            sort_ast = self._type_to_z3(symbol_type).ast
-        elif symbol_type.is_string_type():
-            raise ConvertExpressionError(message=("Unsupported string symbol: %s" %
-                                                  str(formula)),
-                                         expression=formula)
+        if symbol_type.is_function_type():
+            res = self._z3_func_decl(formula)
         else:
-            sort_ast = self._type_to_z3(symbol_type).ast
-        # Create const with given sort
-        res = z3.Z3_mk_const(self.ctx.ref(), z3_sname, sort_ast)
-        z3.Z3_inc_ref(self.ctx.ref(), res)
+            sname = formula.symbol_name()
+            z3_sname = z3.Z3_mk_string_symbol(self.ctx.ref(), sname)
+            if symbol_type.is_bool_type():
+                sort_ast = self.z3BoolSort.ast
+            elif symbol_type.is_real_type():
+                sort_ast = self.z3RealSort.ast
+            elif symbol_type.is_int_type():
+                sort_ast = self.z3IntSort.ast
+            elif symbol_type.is_array_type():
+                sort_ast = self._type_to_z3(symbol_type).ast
+            elif symbol_type.is_string_type():
+                raise ConvertExpressionError(message=("Unsupported string symbol: %s" %
+                                                      str(formula)),
+                                             expression=formula)
+            elif symbol_type.is_custom_type():
+                sort_ast = self._type_to_z3(symbol_type).ast
+            else:
+                sort_ast = self._type_to_z3(symbol_type).ast
+            # Create const with given sort
+            res = z3.Z3_mk_const(self.ctx.ref(), z3_sname, sort_ast)
+            z3.Z3_inc_ref(self.ctx.ref(), res)
         return res
 
     def walk_ite(self, formula, args, **kwargs):
@@ -839,6 +916,8 @@ class Z3Converter(Converter, DagWalker):
                                    self._z3_to_type(sort.range()))
         elif sort.kind() == z3.Z3_BV_SORT:
             return types.BVType(sort.size())
+        elif sort.kind() == z3.Z3_UNINTERPRETED_SORT:
+            return types.Type(str(sort))
         else:
             raise NotImplementedError("Unsupported sort in conversion: %s" % sort)
 

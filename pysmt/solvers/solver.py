@@ -450,6 +450,12 @@ class Model(object):
         self.environment = environment
         self._converter = None
 
+    def get_diagram_sorts(self):
+        raise NotImplementedError
+
+    def get_diagram_funcs(self):
+        raise NotImplementedError
+
     def get_value(self, formula, model_completion=True):
         """Returns the value of formula in the current model (if one exists).
 
