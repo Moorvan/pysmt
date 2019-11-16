@@ -231,7 +231,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         self._assert_is_boolean(formula)
         term = self.converter.convert(formula)
 
-        if self.options.unsat_cores_mode is not None:
+        if (named is not None) and (self.options.unsat_cores_mode is not None):
             # TODO: IF unsat_cores_mode is all, then we add this fresh variable.
             # Otherwise, we should track this only if it is named.
             key = self.mgr.FreshSymbol(template="_assertion_%d")
@@ -277,7 +277,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
 
     def _named_assertions_map(self):
         if self.options.unsat_cores_mode is not None:
-            return dict((t[0], (t[1],t[2])) for t in self.assertions)
+            return dict((t[0], (t[1],t[2])) for t in self.named_assertions)
         return None
 
     def get_named_unsat_core(self):

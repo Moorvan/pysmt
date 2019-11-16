@@ -317,6 +317,7 @@ class IncrementalTrackingSolver(Solver):
 
         self._assertion_stack = []
         self._backtrack_points = []
+        self._named_assertions = []
 
     @property
     def last_command(self):
@@ -342,6 +343,15 @@ class IncrementalTrackingSolver(Solver):
         """
         return self._assertion_stack
 
+    @property
+    def named_assertions(self):
+        """Returns the list of named assertions that are still in the solver.
+
+        Returns the list of results of calls to _add_assertion() that
+        are named and still asserted in the solver
+        """
+        return self._named_assertions
+
     def _reset_assertions(self):
         raise NotImplementedError
 
@@ -364,6 +374,8 @@ class IncrementalTrackingSolver(Solver):
     def add_assertion(self, formula, named=None):
         tracked = self._add_assertion(formula, named=named)
         self._assertion_stack.append(tracked)
+        if named is not None:
+            self._named_assertions.append(tracked)
         self._last_command = "assert"
 
     def _solve(self, assumptions=None):
