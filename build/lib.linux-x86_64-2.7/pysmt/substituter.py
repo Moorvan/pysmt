@@ -120,12 +120,12 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
 #                     "Only terms should be provided as substitutions." +
 #                     " Non-term '%s' found." % v)
             # Check that substitutions belong to the current formula manager
-            if k not in self.manager:
-                raise PysmtTypeError(
-                    "Key %d does not belong to the Formula Manager." % i)
-            if v not in self.manager:
-                raise PysmtTypeError(
-                    "Value %d does not belong to the Formula Manager." % i)
+#             if k not in self.manager:
+#                 raise PysmtTypeError(
+#                     "Key %d does not belong to the Formula Manager." % i)
+#             if v not in self.manager:
+#                 raise PysmtTypeError(
+#                     "Value %d does not belong to the Formula Manager." % i)
 
         res = self.walk(formula, substitutions=subs, ssubstitutions=ssubs)
         return res
@@ -219,6 +219,7 @@ class MSSubstituter(Substituter):
 # EOC MSSSubstituter
 
 
+
 class FiniteSubstituter(Substituter):
     """Performs Finite Substitution.
 
@@ -226,58 +227,48 @@ class FiniteSubstituter(Substituter):
     def __init__(self, env):
         Substituter.__init__(self, env=env)
 
-    @handles(set(op.ALL_TYPES) - op.QUANTIFIERS)
-    def walk_identity_or_replace(self, formula, args, **kwargs):
+    def substitute_sort(self, f, subs, suffix, f2i=False):
+#         print(f)
+        
+        if f2i:
+            name = f.symbol_name()
+            if name.endswith(suffix):
+                name = name[:len(name) - len(suffix)]
+        else:
+            name = f.symbol_name() + suffix
+        s_type = f.symbol_type()
+        rett = s_type
+        
+        args = []
+        if s_type.is_function_type():
+            rett = s_type.return_type
+            if rett in subs:
+                rett = subs[rett]
+                
+            i = 0
+            for paramt in s_type.param_types:
+                i += 1
+                if paramt in subs:
+                    args.append(subs[paramt])
+                else:
+                    args.append(paramt)
+            ft = self.env.type_manager.FunctionType(rett, tuple(args))
+        else:
+            if rett in subs:
+                rett = subs[rett]
+            ft = rett
+        res = self.mgr.Symbol(name, ft)
+#         print(res, res.symbol_type())
+        return res
+        
+    def walk_symbol(self, formula, args, **kwargs):
         """
         If the formula appears in the substitution, return the substitution.
         Otherwise, rebuild the formula by calling the IdentityWalker.
         """
-        substitutions = kwargs['substitutions']
-        if formula in substitutions:
-            res = substitutions[formula]
-        else:
-            res = Substituter.super(self, formula, args=args, **kwargs)
-        return res
-
-    def finitize(self, formula, args, **kwargs):
-        ipayload = args[0]
-        q = [ipayload]
-#         print("f: %s" % (formula))
-#         print("args: %s" % (args))
-        for v in formula.quantifier_vars():
-#             print("v: %s" % (v))
-            vt = v.symbol_type()
-            vals = kwargs['ssubstitutions'][vt]
-#             print("vt: %s -> %s" % (vt, vals))
-            qN = []
-#             print("q: %s" % (q))
-            while len(q) > 0:
-                curr = q.pop()
-#                 print("curr: %s" % (curr))
-                for val in vals:
-                    new_subs = {}
-                    new_subs[v] = val
-#                     print("subs: %s" % (new_subs))
-                    sub = self.__class__(self.env)
-                    sub.memoization = {}
-                    currval = sub.substitute(curr, new_subs)
-#                     print("currval: %s" % (currval))
-                    qN.append(currval)
-            q = qN
-#         for v in q:
-#             print("-- %s" % v)
-        return q
-
-    def walk_forall(self, formula, args, **kwargs):
-        q = self.finitize(formula, args, **kwargs)
-        res = self.mgr.And(q)
-#         print("res: %s" % res)
-        return res
-
-    def walk_exists(self, formula, args, **kwargs):
-        q = self.finitize(formula, args, **kwargs)
-        res = self.mgr.Or(q)
-#         print("res: %s" % res)
+        ssubstitutions = kwargs['ssubstitutions']
+        res = self.substitute_sort(formula, ssubstitutions, "_f")
+        print("%s (%s) -> %s (%s)" % (formula, formula.symbol_type(), res, res.symbol_type()))
         return res
 
 # EOC FiniteSubstituter
