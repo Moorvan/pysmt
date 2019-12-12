@@ -244,39 +244,47 @@ class FiniteSubstituter(Substituter):
         q = [ipayload]
 #         print("f: %s" % (formula))
 #         print("args: %s" % (args))
+        qvars = []
         for v in formula.quantifier_vars():
 #             print("v: %s" % (v))
             vt = v.symbol_type()
-            vals = kwargs['ssubstitutions'][vt]
-#             print("vt: %s -> %s" % (vt, vals))
-            qN = []
-#             print("q: %s" % (q))
-            while len(q) > 0:
-                curr = q.pop()
-#                 print("curr: %s" % (curr))
-                for val in vals:
-                    new_subs = {}
-                    new_subs[v] = val
-#                     print("subs: %s" % (new_subs))
-                    sub = self.__class__(self.env)
-                    sub.memoization = {}
-                    currval = sub.substitute(curr, new_subs)
-#                     print("currval: %s" % (currval))
-                    qN.append(currval)
-            q = qN
-#         for v in q:
-#             print("-- %s" % v)
-        return q
+            if vt in kwargs['ssubstitutions']:
+                vals = kwargs['ssubstitutions'][vt]
+    #             print("vt: %s -> %s" % (vt, vals))
+                qN = []
+    #             print("q: %s" % (q))
+                while len(q) > 0:
+                    curr = q.pop()
+    #                 print("curr: %s" % (curr))
+                    for val in vals:
+                        new_subs = {}
+                        new_subs[v] = val
+    #                     print("subs: %s" % (new_subs))
+                        sub = self.__class__(self.env)
+                        sub.memoization = {}
+                        currval = sub.substitute(curr, new_subs)
+    #                     print("currval: %s" % (currval))
+                        qN.append(currval)
+                q = qN
+    #         for v in q:
+    #             print("-- %s" % v)
+            else:
+                qvars.append(v)
+        return q, qvars
 
     def walk_forall(self, formula, args, **kwargs):
-        q = self.finitize(formula, args, **kwargs)
+        q, qvars = self.finitize(formula, args, **kwargs)
         res = self.mgr.And(q)
+        if len(qvars) != 0:
+            res = self.mgr.ForAll(qvars, res)
 #         print("res: %s" % res)
         return res
 
     def walk_exists(self, formula, args, **kwargs):
-        q = self.finitize(formula, args, **kwargs)
+        q, qvars = self.finitize(formula, args, **kwargs)
         res = self.mgr.Or(q)
+        if len(qvars) != 0:
+            res = self.mgr.Exists(qvars, res)
 #         print("res: %s" % res)
         return res
 

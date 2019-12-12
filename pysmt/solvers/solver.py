@@ -412,6 +412,9 @@ class IncrementalTrackingSolver(Solver):
             point = self._backtrack_points.pop()
             self._assertion_stack = self._assertion_stack[0:point]
         self._last_command = "pop"
+    
+    def reset_named_assertions(self):
+        self._named_assertions = []
 
 
 class UnsatCoreSolver(object):

@@ -78,7 +78,10 @@ class Z3Model(Model):
         Model.__init__(self, environment)
         self.z3_model = z3_model
         self.converter = Z3Converter(environment, z3_model.ctx)
-    
+
+    def print_model(self):    
+        print(self.z3_model.sexpr())
+
     def get_diagram_sorts(self):
 #         print(self.z3_model)
 #         print(self.z3_model.sexpr())
