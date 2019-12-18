@@ -225,6 +225,10 @@ class FiniteSubstituter(Substituter):
     """
     def __init__(self, env):
         Substituter.__init__(self, env=env)
+        self.freset()
+
+    def freset(self):
+        self.fcache = dict()
 
     @handles(set(op.ALL_TYPES) - op.QUANTIFIERS)
     def walk_identity_or_replace(self, formula, args, **kwargs):
@@ -239,13 +243,14 @@ class FiniteSubstituter(Substituter):
             res = Substituter.super(self, formula, args=args, **kwargs)
         return res
 
-    def finitize(self, formula, args, **kwargs):
-        ipayload = args[0]
+    def finitize(self, ipayload, ivars, **kwargs):
+        key = (ipayload, ivars)
+        if key in self.fcache:
+            return self.fcache[key]
+        
         q = [ipayload]
-#         print("f: %s" % (formula))
-#         print("args: %s" % (args))
         qvars = []
-        for v in formula.quantifier_vars():
+        for v in ivars:
 #             print("v: %s" % (v))
             vt = v.symbol_type()
             if vt in kwargs['ssubstitutions']:
@@ -270,21 +275,31 @@ class FiniteSubstituter(Substituter):
     #             print("-- %s" % v)
             else:
                 qvars.append(v)
-        return q, qvars
+        
+        rhs = [q, qvars]
+        self.fcache[key] = rhs
+        return rhs
 
+    def mk_finite(self, formula, args, **kwargs):
+#         print("f: %s" % formula)
+        ipayload = args[0]
+        ivars = formula.quantifier_vars()
+        f = self.finitize(ipayload, ivars, **kwargs)
+        return f[0], f[1]
+    
     def walk_forall(self, formula, args, **kwargs):
-        q, qvars = self.finitize(formula, args, **kwargs)
-        res = self.mgr.And(q)
-        if len(qvars) != 0:
-            res = self.mgr.ForAll(qvars, res)
+        fpayload, fvars = self.mk_finite(formula, args, **kwargs)
+        res = self.mgr.And(fpayload)
+        if len(fvars) != 0:
+            res = self.mgr.ForAll(fvars, res)
 #         print("res: %s" % res)
         return res
 
     def walk_exists(self, formula, args, **kwargs):
-        q, qvars = self.finitize(formula, args, **kwargs)
-        res = self.mgr.Or(q)
-        if len(qvars) != 0:
-            res = self.mgr.Exists(qvars, res)
+        fpayload, fvars = self.mk_finite(formula, args, **kwargs)
+        res = self.mgr.Or(fpayload)
+        if len(fvars) != 0:
+            res = self.mgr.Exists(fvars, res)
 #         print("res: %s" % res)
         return res
 

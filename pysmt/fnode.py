@@ -134,13 +134,13 @@ class FNode(object):
         """
         return _env().substituter.substitute(self, subs=subs)
 
-    def fsubstitute(self, subs, ssubs):
+    def fsubstitute(self, ssubs):
         """Return a formula in which subformula have been substituted.
 
         subs is a dictionary mapping terms to be subtituted with their
         substitution.
         """
-        return _env().fsubstituter.substitute(self, subs=subs, ssubs=ssubs)
+        return _env().fsubstituter.substitute(self, subs=dict(), ssubs=ssubs)
 
     def size(self, measure=None):
         """Return the size of the formula according to the given metric.
