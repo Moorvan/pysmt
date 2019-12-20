@@ -218,32 +218,99 @@ class MSSubstituter(Substituter):
 
 # EOC MSSSubstituter
 
-
-class FiniteSubstituter(Substituter):
+class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
     """Performs Finite Substitution.
 
     """
     def __init__(self, env):
-        Substituter.__init__(self, env=env)
-        self.freset()
+        pysmt.walkers.IdentityDagWalker.__init__(self, env=env, invalidate_memoization=False)
+        self.manager = self.env.formula_manager
+        self.fcache = dict()
+        self.icache = dict()
+        self.memoization.clear()
 
     def freset(self):
+        print("len(fcache) = %d" % len(self.fcache))
+        print("len(memoization) = %d" % len(self.memoization))
         self.fcache = dict()
+        self.memoization.clear()
 
+    def set_ssubs(self, ssubs):
+        self.ssubstitutions = ssubs
+
+    def get_fkey(self, formula):
+        return formula
+
+    def fsubstitute(self, formula):
+        """Replaces any subformula in formula with the definition in subs."""
+        # Check that formula is a term
+        if not formula.is_term():
+            raise PysmtTypeError("substitute() can only be used on terms.")
+
+        res = self.walk(formula, substitutions=dict())
+
+        key = self.get_fkey(formula)
+        self.memoization[key] = res
+        return res
+    
     @handles(set(op.ALL_TYPES) - op.QUANTIFIERS)
     def walk_identity_or_replace(self, formula, args, **kwargs):
         """
         If the formula appears in the substitution, return the substitution.
         Otherwise, rebuild the formula by calling the IdentityWalker.
         """
-        substitutions = kwargs['substitutions']
-        if formula in substitutions:
-            res = substitutions[formula]
-        else:
-            res = Substituter.super(self, formula, args=args, **kwargs)
+        res = pysmt.walkers.IdentityDagWalker.super(self, formula, args=args, **kwargs)
         return res
 
-    def finitize(self, ipayload, ivars, **kwargs):
+    def finitize_slow(self, ipayload, ivars):
+        key = (ipayload, ivars)
+        if key in self.fcache:
+            return self.fcache[key]
+        
+        q = [ipayload]
+        qvars = []
+        qvar2val = dict()
+        subs = {}
+        for v in ivars:
+            vt = v.symbol_type()
+            if vt in self.ssubstitutions:
+                vals = self.ssubstitutions[vt]
+                qvar2val[v] = [vals, 0]
+                subs[v] = vals[0]
+            else:
+                qvars.append(v)
+        
+        s = [subs]
+        for v, rhs in qvar2val.iteritems():
+#             print("v: %s" % (v))
+            vals = rhs[0]
+            sN = []
+#             print("s: %s" % (s))
+            while len(s) > 0:
+                curr = s.pop()
+#                 print("curr: %s" % (curr))
+                for val in vals:
+                    new_subs = curr.copy()
+                    new_subs[v] = val
+#                     print("subs: %s" % (new_subs))
+                    sN.append(new_subs)
+            sN.reverse()
+            s = sN
+#             for v in s:
+#                 print("-- %s" % v)
+        
+        s.reverse()
+        q = []
+        for curr in s:
+            currval = ipayload.substitute(curr)
+            q.append(currval)
+#             print("-- %s" % currval)
+        
+        rhs = [q, qvars]
+        self.fcache[key] = rhs
+        return rhs
+
+    def finitize(self, ipayload, ivars):
         key = (ipayload, ivars)
         if key in self.fcache:
             return self.fcache[key]
@@ -253,8 +320,8 @@ class FiniteSubstituter(Substituter):
         for v in ivars:
 #             print("v: %s" % (v))
             vt = v.symbol_type()
-            if vt in kwargs['ssubstitutions']:
-                vals = kwargs['ssubstitutions'][vt]
+            if vt in self.ssubstitutions:
+                vals = self.ssubstitutions[vt]
     #             print("vt: %s -> %s" % (vt, vals))
                 qN = []
     #             print("q: %s" % (q))
@@ -265,9 +332,9 @@ class FiniteSubstituter(Substituter):
                         new_subs = {}
                         new_subs[v] = val
     #                     print("subs: %s" % (new_subs))
-                        sub = self.__class__(self.env)
-                        sub.memoization = {}
-                        currval = sub.substitute(curr, new_subs)
+#                         sub = self.__class__(self.env)
+#                         sub.memoization = {}
+                        currval = curr.substitute(new_subs)
     #                     print("currval: %s" % (currval))
                         qN.append(currval)
                 q = qN
@@ -280,15 +347,15 @@ class FiniteSubstituter(Substituter):
         self.fcache[key] = rhs
         return rhs
 
-    def mk_finite(self, formula, args, **kwargs):
+    def mk_finite(self, formula, args):
 #         print("f: %s" % formula)
         ipayload = args[0]
         ivars = formula.quantifier_vars()
-        f = self.finitize(ipayload, ivars, **kwargs)
+        f = self.finitize(ipayload, ivars)
         return f[0], f[1]
     
     def walk_forall(self, formula, args, **kwargs):
-        fpayload, fvars = self.mk_finite(formula, args, **kwargs)
+        fpayload, fvars = self.mk_finite(formula, args)
         res = self.mgr.And(fpayload)
         if len(fvars) != 0:
             res = self.mgr.ForAll(fvars, res)
@@ -296,12 +363,15 @@ class FiniteSubstituter(Substituter):
         return res
 
     def walk_exists(self, formula, args, **kwargs):
-        fpayload, fvars = self.mk_finite(formula, args, **kwargs)
+        fpayload, fvars = self.mk_finite(formula, args)
         res = self.mgr.Or(fpayload)
         if len(fvars) != 0:
             res = self.mgr.Exists(fvars, res)
 #         print("res: %s" % res)
         return res
+
+    def _get_key(self, formula, **kwargs):
+        return formula
 
 # EOC FiniteSubstituter
 
