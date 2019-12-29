@@ -218,7 +218,7 @@ class MSSubstituter(Substituter):
 
 # EOC MSSSubstituter
 
-class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
+class FFiniteSubstituter(pysmt.walkers.IdentityDagWalker):
     """Performs Finite Substitution.
 
     """
@@ -226,7 +226,6 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         pysmt.walkers.IdentityDagWalker.__init__(self, env=env, invalidate_memoization=False)
         self.manager = self.env.formula_manager
         self.fcache = dict()
-        self.icache = dict()
         self.memoization.clear()
 
     def freset(self):
@@ -374,5 +373,113 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         return formula
 
 # EOC FiniteSubstituter
+
+class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
+    """Performs Finite Substitution.
+
+    """
+    def __init__(self, env):
+        pysmt.walkers.IdentityDagWalker.__init__(self, env=env, invalidate_memoization=False)
+        self.manager = self.env.formula_manager
+        self.memoization.clear()
+
+    def freset(self):
+        print("len(memoization) = %d" % len(self.memoization))
+        self.memoization.clear()
+
+    def set_ssubs(self, ssubs, has_inf_sort=False):
+        self.ssubstitutions = ssubs
+        self.has_inf_sort = has_inf_sort
+
+    def get_fkey(self, formula):
+        return formula
+
+    def fsubstitute(self, formula):
+        """Replaces any subformula in formula with the definition in subs."""
+        # Check that formula is a term
+        if formula.is_symbol():
+            res = self.fsymbol(formula)
+        else:
+            if not formula.is_term():
+                raise PysmtTypeError("substitute() can only be used on terms.")
+
+            res = self.walk(formula, substitutions=dict())
+
+        key = self.get_fkey(formula)
+        self.memoization[key] = res
+        return res
+    
+    @handles(set(op.ALL_TYPES) - op.SYMBOLS)
+    def walk_identity_or_replace(self, formula, args, **kwargs):
+        """
+        If the formula appears in the substitution, return the substitution.
+        Otherwise, rebuild the formula by calling the IdentityWalker.
+        """
+        res = pysmt.walkers.IdentityDagWalker.super(self, formula, args=args, **kwargs)
+        return res
+
+    def walk_symbol(self, formula, args, **kwargs):
+#         print("in: %s of type %s" % (formula, formula.symbol_type()))
+        key = formula.symbol_type()
+        rett = key
+        if key.is_function_type():
+            rett = key.return_type
+        if rett in self.ssubstitutions:
+            rett = self.ssubstitutions[rett]
+        
+        if key.is_function_type():
+            argst = []
+            for arg in args:
+                argt = arg.get_type()
+                argst.append(argt)
+            rett = self.mgr.env.type_manager.FunctionType(rett, argst)
+            
+        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name()),
+                               rett)
+#         print("out: %s of type %s" % (res, res.symbol_type()))
+        return res
+
+    def fsymbol_name(self, name):
+        if self.has_inf_sort:
+            if name.endswith(":e"):
+                return name[:-2]
+            else:
+                prefix = name.rstrip('1234567890')
+                if prefix.endswith(":e"):
+                    prefix_new = prefix[:-2] + ":i"
+                    name_new = prefix_new + name[len(prefix_new):]
+                    return name_new
+                else:
+                    return name + ":i"
+        return name + ":e"
+
+    def fsymbol(self, formula):
+#         print("in: %s of type %s" % (formula, formula.symbol_type()))
+        key = formula.symbol_type()
+        rett = key
+        if key.is_function_type():
+            rett = key.return_type
+        if rett in self.ssubstitutions:
+            rett = self.ssubstitutions[rett]
+        
+        if key.is_function_type():
+            fparams = []
+            for p in key.param_types:
+                fp = p
+                if fp in self.ssubstitutions:
+                    fp = self.ssubstitutions[fp]
+                fparams.append(fp)
+            rett = self.mgr.env.type_manager.FunctionType(rett, fparams)
+            
+        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name()),
+                               rett)
+#         print("out: %s of type %s" % (res, res.symbol_type()))
+        return res
+
+    def _get_key(self, formula, **kwargs):
+        return formula
+
+# EOC FiniteSubstituter
+
 
 

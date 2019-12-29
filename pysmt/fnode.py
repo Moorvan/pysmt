@@ -22,6 +22,7 @@ import pysmt.smtlib
 from pysmt.operators import (FORALL, EXISTS, AND, OR, NOT, IMPLIES, IFF,
                              SYMBOL, FUNCTION,
                              REAL_CONSTANT, BOOL_CONSTANT, INT_CONSTANT,
+                             ENUM_CONSTANT,
                              PLUS, MINUS, TIMES,
                              LE, LT, EQUALS,
                              ITE,
@@ -117,6 +118,10 @@ class FNode(object):
     def get_free_variables(self):
         """Return the set of Symbols that are free in the formula."""
         return _env().fvo.get_free_variables(self)
+
+    def get_enum_constants(self):
+        """Return the set of Symbols that are enum constants in the formula."""
+        return _env().eco.get_enum_constants(self)
 
     def get_atoms(self):
         """Return the set of atoms appearing in the formula."""
@@ -237,6 +242,10 @@ class FNode(object):
     def is_algebraic_constant(self):
         """Test whether the formula is an Algebraic Constant"""
         return self.node_type() == ALGEBRAIC_CONSTANT
+
+    def is_enum_constant(self):
+        """Test whether the formula is an Enum Constant"""
+        return self.node_type() == ENUM_CONSTANT
 
     def is_symbol(self, type_=None):
         """Test whether the formula is a Symbol.
@@ -579,7 +588,7 @@ class FNode(object):
     def constant_value(self):
         """Return the value of the Constant."""
         assert self.is_constant()
-        if self.node_type() == BV_CONSTANT:
+        if self.node_type() in [BV_CONSTANT, ENUM_CONSTANT]:
             return self._content.payload[0]
         return self._content.payload
 
@@ -593,10 +602,12 @@ class FNode(object):
             return BOOL
         elif self.node_type() == STR_CONSTANT:
             return STRING
-        else:
-            assert self.node_type() == BV_CONSTANT,\
-                "Unsupported method constant_type '%s'" % self
+        elif self.node_type() == BV_CONSTANT:
             return BVType(width=self.bv_width())
+        else:
+            assert self.node_type() == ENUM_CONSTANT, \
+                "Unsupported method constant_type '%s'" % self
+            return self._content.payload[1]
 
     def bv2nat(self):
         """Return the unsigned value encoded by the BitVector."""

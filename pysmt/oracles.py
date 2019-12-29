@@ -370,6 +370,52 @@ class FreeVarsOracle(walkers.DagWalker):
 # EOC FreeVarsOracle
 
 
+class EnumConstsOracle(walkers.DagWalker):
+    # We have only few categories for this walker.
+    #
+    # - Simple Args simply need to combine the cone/dependencies
+    #   of the children.
+    # - Quantifiers need to exclude bounded variables
+    # - Constants have no impact
+
+    def get_enum_constants(self, formula):
+        """Returns the set of Symbols appearing as enum constants in the formula."""
+        return self.walk(formula)
+
+    @walkers.handles((set(op.ALL_TYPES) - \
+                           (set([op.SYMBOL]) | op.QUANTIFIERS | op.CONSTANTS)))
+    def walk_simple_args(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        res = set()
+        for arg in args:
+            res.update(arg)
+        return frozenset(res)
+
+    @walkers.handles(op.QUANTIFIERS)
+    def walk_quantifier(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return args[0].difference(formula.quantifier_vars())
+
+    def walk_symbol(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return frozenset()
+
+    @walkers.handles(op.CONSTANTS - set([op.ENUM_CONSTANT]))
+    def walk_constant(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return frozenset()
+
+    @walkers.handles(op.ENUM_CONSTANT)
+    def walk_enum_constant(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        res = set([formula])
+        for arg in args:
+            res.update(arg)
+        return frozenset(res)
+
+# EOC FreeVarsOracle
+
+
 class AtomsOracle(walkers.DagWalker):
     """This class returns the set of Boolean atoms involved in a formula
     A boolean atom is either a boolean variable or a theory atom

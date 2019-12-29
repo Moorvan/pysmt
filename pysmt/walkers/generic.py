@@ -85,6 +85,7 @@ class Walker(with_metaclass(MetaNodeTypeHandler)):
                 self.functions[o] = getattr(self, nt_to_fun(o))
             except AttributeError:
                 self.functions[o] = self.walk_error
+#         print(self.functions[66])
 
     def set_function(self, function, *node_types):
         """Overrides the default walking function for each of the specified
@@ -118,6 +119,9 @@ class Walker(with_metaclass(MetaNodeTypeHandler)):
 
         """
         node_type = formula.node_type()
+        print(node_type)
+        print(nt_to_fun(formula.node_type()))
+        print(self.env.dwf)
         if node_type in self.env.dwf:
             dwf = self.env.dwf[node_type]
             walker_class = type(self)

@@ -164,6 +164,12 @@ def Function(vname, params):
     return get_env().formula_manager.Function(vname, params)
 
 
+def Enum(value, type_):
+    """Returns an Enum constant with the given value and type.
+    """
+    return get_env().formula_manager.Enum( value, type_)
+
+
 def Not(formula):
     r""".. math:: \lnot \varphi"""
     return get_env().formula_manager.Not(formula)

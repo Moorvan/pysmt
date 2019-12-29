@@ -24,10 +24,11 @@ In the current version these are:
  * BVType
  * FunctionType
  * ArrayType
+ * EnumType
 
 Types are represented by singletons. Basic types (Bool, Int and Real)
-are constructed here by default, while BVType and FunctionType relies
-on a factory service. Each BitVector width is represented by a
+are constructed here by default, while BVType, FunctionType, EnumType
+rely on a factory service. Each BitVector width is represented by a
 different instance of BVType.
 
 """
@@ -87,6 +88,9 @@ class PySMTType(object):
         return False
 
     def is_string_type(self):
+        return False
+
+    def is_enum_type(self):
         return False
 
     def is_function_type(self):
@@ -329,6 +333,48 @@ class _FunctionType(PySMTType):
         return self._hash
 
 
+class _EnumType(PySMTType):
+    """Internal class used to represent an Enum type.
+
+    This class should not be instantiated directly, but the factory
+    method EnumType should be used instead.
+    """
+    def __init__(self, name, domain):
+        PySMTType.__init__(self, basename=name)
+        self._domain = domain
+        self._hash = hash(str(self))
+        return
+
+    @property
+    def domain(self):
+        """Returns the domain of the EnumType"""
+        return list(self._domain)
+
+    def bit_count(self):
+        from math import log, ceil
+        return int(ceil(log(len(self._domain), 2)))
+
+    def as_smtlib(self, funstyle=True):
+        raise NotImplementedError
+
+    def __str__(self):
+        return "%s" % (self.name)
+#         return "%s{%s}" % (self.name, ",".join([str(d) for d in self._domain]))
+
+    def is_enum_type(self):
+        return True
+
+    def __eq__(self, other):
+        if PySMTType.__eq__(self, other):
+            return True
+        if other is not None and other.is_enum_type():
+            return self.domain == other.domain
+        return False
+
+    def __hash__(self):
+        return self._hash
+
+
 class _TypeDecl(object):
     """Create a new Type Declaration (sort).
 
@@ -395,6 +441,7 @@ class TypeManager(object):
         self._bv_types = {}
         self._function_types = {}
         self._array_types = {}
+        self._enum_types = {}
         self._custom_types = {}
         self._custom_types_decl = {}
         self._bool = None
@@ -482,6 +529,22 @@ class TypeManager(object):
             self._array_types[key] = ty
         return ty
 
+    def EnumType(self, name, domain):
+        """Returns the singleton of the Enum type with the given domain
+    
+        This function takes care of building and registering the type
+        whenever needed. To see the functions provided by the type look at
+        _EnumType
+        """
+        key = name
+        try:
+            ty = self._enum_types[key]
+        except KeyError:
+            ty = _EnumType(name, domain)
+            self._enum_types[key] = ty
+        return ty
+    
+    
     def Type(self, name, arity=0):
         """Creates a new Type Declaration (sort declaration).
 
@@ -588,6 +651,11 @@ def ArrayType(index_type, elem_type):
     """Returns the Array type with the given arguments."""
     mgr = pysmt.environment.get_env().type_manager
     return mgr.ArrayType(index_type=index_type, elem_type=elem_type)
+
+def EnumType(name, domain):
+    """Returns the Enum type for the given width."""
+    mgr = pysmt.environment.get_env().type_manager
+    return mgr.EnumType(name, domain)
 
 def Type(name, arity=0):
     """Returns the Type Declaration with the given name (sort declaration)."""

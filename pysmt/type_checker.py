@@ -242,6 +242,13 @@ class SimpleTypeChecker(walkers.DagWalker):
         assert len(args) == 0
         return BVType(formula.bv_width())
 
+    @walkers.handles(op.ENUM_CONSTANT)
+    def walk_identity_enum(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        assert formula is not None
+        assert len(args) == 0
+        return formula.constant_type()
+
     def walk_symbol(self, formula, args, **kwargs):
         assert formula is not None
         assert len(args) == 0

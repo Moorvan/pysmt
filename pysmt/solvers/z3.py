@@ -103,6 +103,7 @@ class Z3Model(Model):
                     sorts[pysort] = list()
                 sorts[pysort].append(pyv)
                 self.converter.z3MemoizeUniverse(pyv, v)
+        
         return sorts
 
     def get_diagram_funcs(self):
@@ -429,6 +430,8 @@ class Z3Converter(Converter, DagWalker):
         self.z3BoolSort = z3.BoolSort(self.ctx)
         self.z3IntSort  = z3.IntSort(self.ctx)
         self._z3ArraySorts = {}
+        self._z3EnumSorts = {}
+        self._z3EnumConsts = {}
         self._z3BitVecSorts = {}
         self._z3Sorts = {}
         # Unique reference to Function Declaration
@@ -457,6 +460,33 @@ class Z3Converter(Converter, DagWalker):
             self._z3ArraySorts[(askey(key),
                                askey(value))] = sort
         return sort
+
+    def z3EnumSort(self, name, value):
+        """Return the z3 EnumSort for the given name."""
+        key = name
+        try:
+            return self._z3EnumSorts[key][0]
+        except KeyError:
+            sort, values = z3.EnumSort(key, value)
+            self._z3EnumSorts[key] = (sort, value)
+            
+            for i in range(len(value)):
+                lhs = str(value[i])
+                rhs = values[i]
+                assert(lhs == str(rhs))
+                self._z3EnumConsts[lhs] = rhs
+        return sort
+
+    def _z3_to_enum_val(self, sort):
+        """Return the z3 EnumSort values for the given name."""
+        key = str(sort)
+        try:
+            value = self._z3EnumSorts[key][1]
+        except KeyError:
+            value = []
+            for i in range(sort.num_constructors()):
+                value.append(sort.constructor(i))
+        return value
 
     def z3Sort(self, name):
         """Return the z3 Sort for the given name."""
@@ -494,6 +524,8 @@ class Z3Converter(Converter, DagWalker):
                 return z3.BitVecRef
             elif type_.is_function_type():
                 return z3.FuncDeclRef
+            elif type_.is_enum_type():
+                return z3.DatatypeRef
             else:
                 return z3.AstRef
 #                 raise NotImplementedError(formula)
@@ -513,6 +545,8 @@ class Z3Converter(Converter, DagWalker):
                 return z3.ArrayRef
             elif type_.is_bv_type():
                 return z3.BitVecRef
+            elif type_.is_enum_type():
+                return z3.DatatypeRef
             else:
                 raise NotImplementedError(formula)
 
@@ -553,7 +587,7 @@ class Z3Converter(Converter, DagWalker):
             fsymbol = self.mgr.get_symbol(decl.name())
             return fsymbol
         except UndefinedSymbolError:
-            print("decl: %s not found" % decl)
+#             print("decl: %s not found" % decl)
             return self.back(decl(args))
         
 
@@ -615,15 +649,18 @@ class Z3Converter(Converter, DagWalker):
             elif z3.is_algebraic_value(expr):
                 # Algebraic value
                 return self.mgr._Algebraic(Numeral(expr))
+            elif isinstance(expr.sort(), z3.DatatypeSortRef):
+                symb_type = self._z3_to_type(expr.sort())
+                return self.mgr.Enum(str(expr), symb_type)
             else:
                 # it must be a symbol
                 try:
                     return self.mgr.get_symbol(str(expr))
                 except UndefinedSymbolError:
-#                     import warnings
                     symb_type = self._z3_to_type(expr.sort())
-                    return self.mgr.Symbol(str(expr), symb_type)
+#                     import warnings
 #                     warnings.warn("Defining new symbol: %s" % str(expr))
+                    return self.mgr.Symbol(str(expr), symb_type)
 #                     return self.mgr.FreshSymbol(symb_type,
 #                                                 template="__z3_%d")
         elif z3.is_function(expr):
@@ -705,6 +742,8 @@ class Z3Converter(Converter, DagWalker):
                 raise ConvertExpressionError(message=("Unsupported string symbol: %s" %
                                                       str(formula)),
                                              expression=formula)
+            elif symbol_type.is_enum_type():
+                sort_ast = self._type_to_z3(symbol_type).ast
             elif symbol_type.is_custom_type():
                 sort_ast = self._type_to_z3(symbol_type).ast
             else:
@@ -815,6 +854,20 @@ class Z3Converter(Converter, DagWalker):
         z3.Z3_inc_ref(self.ctx.ref(), z3term)
         return z3term
 
+    def walk_enum_constant(self, formula, **kwargs):
+        sname = str(formula.constant_value())
+        tp = formula.constant_type()
+        sort_ast = self._type_to_z3(tp).ast
+        assert(sname in self._z3EnumConsts)
+        z3term = self._z3EnumConsts[sname].ast
+#         self._z3EnumSorts[key] = (sort, value)
+#         z3_sname = z3.Z3_mk_string_symbol(self.ctx.ref(), sname)
+#         z3term = z3.Z3_mk_const(self.ctx.ref(),
+#                                   z3_sname,
+#                                   sort_ast)
+#         z3.Z3_inc_ref(self.ctx.ref(), z3term)
+        return z3term
+
     def walk_bv_extract(self, formula, args, **kwargs):
         z3term = z3.Z3_mk_extract(self.ctx.ref(),
                                   formula.bv_extract_end(),
@@ -919,7 +972,10 @@ class Z3Converter(Converter, DagWalker):
                                    self._z3_to_type(sort.range()))
         elif sort.kind() == z3.Z3_BV_SORT:
             return types.BVType(sort.size())
+        elif sort.kind() == z3.Z3_DATATYPE_SORT:
+            return types.EnumType(str(sort), self._z3_to_enum_val(sort))
         elif sort.kind() == z3.Z3_UNINTERPRETED_SORT:
+            
             return types.Type(str(sort))
         else:
             raise NotImplementedError("Unsupported sort in conversion: %s" % sort)
@@ -986,6 +1042,8 @@ class Z3Converter(Converter, DagWalker):
             return self.z3ArraySort(key_sort, val_sort)
         elif tp.is_bv_type():
             return self.z3BitVecSort(tp.width)
+        elif tp.is_enum_type():
+            return self.z3EnumSort(tp.name, tp.domain)
         else:
             assert tp.is_custom_type(), "Unsupported type '%s'" % tp
             return self.z3Sort(tp)

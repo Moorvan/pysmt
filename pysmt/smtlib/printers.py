@@ -476,6 +476,10 @@ class SmtDagPrinter(DagWalker):
         return "#b" + res
 
 
+    def walk_enum_constant(self, formula, **kwargs):
+        raise NotImplementedError
+
+
     def walk_bool_constant(self, formula, **kwargs):
         if formula.constant_value():
             return "true"

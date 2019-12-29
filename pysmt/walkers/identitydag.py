@@ -109,6 +109,9 @@ class IdentityDagWalker(DagWalker):
     def walk_bv_constant(self, formula, **kwargs):
         return self.mgr.BV(formula.constant_value(), formula.bv_width())
 
+    def walk_enum_constant(self, formula, **kwargs):
+        return self.mgr.Enum(formula.constant_value(), formula.constant_type())
+
     def walk_bv_and(self, formula, args, **kwargs):
         return self.mgr.BVAnd(args[0], args[1])
 

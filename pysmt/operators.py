@@ -25,7 +25,7 @@ from itertools import chain
 from six.moves import xrange
 
 
-ALL_TYPES = list(xrange(0,66))
+ALL_TYPES = list(xrange(0,67))
 
 (
 FORALL, EXISTS, AND, OR, NOT, IMPLIES, IFF, # Boolean Logic (0-6)
@@ -79,7 +79,10 @@ DIV,                                        # Arithmetic Division (62)
 POW,                                        # Arithmetic Power (63)
 ALGEBRAIC_CONSTANT,                         # Algebraic Number (64)
 BV_TONATURAL,                               # BV to Natural Conversion (65)
+ENUM_CONSTANT,
 ) = ALL_TYPES
+
+SYMBOLS = frozenset([SYMBOL])
 
 QUANTIFIERS = frozenset([FORALL, EXISTS])
 
@@ -88,7 +91,7 @@ BOOL_CONNECTIVES = frozenset([AND, OR, NOT, IMPLIES, IFF])
 BOOL_OPERATORS = frozenset(QUANTIFIERS | BOOL_CONNECTIVES)
 
 CONSTANTS = frozenset([BOOL_CONSTANT, REAL_CONSTANT, INT_CONSTANT,
-                       BV_CONSTANT, STR_CONSTANT, ALGEBRAIC_CONSTANT])
+                       BV_CONSTANT, STR_CONSTANT, ALGEBRAIC_CONSTANT, ENUM_CONSTANT])
 
 # Relations are predicates on theory atoms.
 # Relations have boolean type. They are a subset of the operators for a theory
@@ -223,4 +226,5 @@ __OP_STR__ = {
     DIV: "DIV",
     POW: "POW",
     ALGEBRAIC_CONSTANT: "ALGEBRAIC_CONSTANT",
+    ENUM_CONSTANT: "ENUM_CONSTANT",
 }
