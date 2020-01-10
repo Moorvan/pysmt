@@ -179,7 +179,7 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
         return
 
     def get_value(self, item):
-        self._assert_no_function_type(item)
+#         self._assert_no_function_type(item)
         term = self.converter.convert(item)
         cvc4_res = self.cvc4.getValue(term)
         res = self.converter.back(cvc4_res)
@@ -216,11 +216,23 @@ class CVC4Converter(Converter, DagWalker):
         self.boolType = cvc4_exprMgr.booleanType()
         self.stringType = cvc4_exprMgr.stringType()
 
+        self._cvc4Sorts = {}
+
         self.declared_vars = {}
         self.backconversion = {}
         self.mgr = environment.formula_manager
         self._get_type = environment.stc.get_type
         return
+
+    def cvc4Sort(self, name):
+        """Return the cvc4 Sort for the given name."""
+        name = str(name)
+        try:
+            return self._cvc4Sorts[name]
+        except KeyError:
+            sort = self.cvc4_exprMgr.mkSort(name)
+            self._cvc4Sorts[name] = sort
+        return sort
 
     def declare_variable(self, var):
         if not var.is_symbol():
@@ -583,7 +595,7 @@ class CVC4Converter(Converter, DagWalker):
         elif tp.is_string_type():
             return self.stringType
         elif tp.is_custom_type():
-            return self.cvc4_exprMgr.mkSort(str(tp))
+            return self.cvc4Sort(tp)
         else:
             raise NotImplementedError("Unsupported type: %s" %tp)
 

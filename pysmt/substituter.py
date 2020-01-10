@@ -387,9 +387,10 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         print("len(memoization) = %d" % len(self.memoization))
         self.memoization.clear()
 
-    def set_ssubs(self, ssubs, has_inf_sort=False):
+    def set_ssubs(self, ssubs, idx, has_inf_sort):
         self.ssubstitutions = ssubs
         self.has_inf_sort = has_inf_sort
+        self.esuffix = ":e" + str(idx)
 
     def get_fkey(self, formula):
         return formula
@@ -441,17 +442,29 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
 
     def fsymbol_name(self, name):
         if self.has_inf_sort:
-            if name.endswith(":e"):
-                return name[:-2]
+            prefix = name.rstrip('1234567890')
+            if prefix.endswith(":e"):
+                return prefix[:-2]
+            else:
+                if prefix.endswith(":"):
+                    suffix = name[len(prefix):]
+                    prefix = prefix[:-1].rstrip('1234567890')
+                    if prefix.endswith(":e"):
+                        prefix_new = prefix[:-2] + ":i"
+                        name_new = prefix_new + ":" + suffix
+                        return name_new
+            return name + ":i"
+        else:
+            if name.endswith(":i"):
+                return name[:-2] + self.esuffix
             else:
                 prefix = name.rstrip('1234567890')
-                if prefix.endswith(":e"):
-                    prefix_new = prefix[:-2] + ":i"
-                    name_new = prefix_new + name[len(prefix_new):]
+                if prefix.endswith(":i:"):
+                    suffix = name[len(prefix):]
+                    prefix_new = prefix[:-3] + self.esuffix
+                    name_new = prefix_new + ":" + suffix
                     return name_new
-                else:
-                    return name + ":i"
-        return name + ":e"
+        return name + self.esuffix
 
     def fsymbol(self, formula):
 #         print("in: %s of type %s" % (formula, formula.symbol_type()))
