@@ -384,7 +384,7 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         self.memoization.clear()
 
     def freset(self):
-        print("len(memoization) = %d" % len(self.memoization))
+#         print("len(memoization) = %d" % len(self.memoization))
         self.memoization.clear()
 
     def set_ssubs(self, ssubs, idx, has_inf_sort):
