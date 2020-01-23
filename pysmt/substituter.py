@@ -428,23 +428,27 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         if rett in self.ssubstitutions:
             rett = self.ssubstitutions[rett]
         
+        isFunc = False
         if key.is_function_type():
             argst = []
             for arg in args:
                 argt = arg.get_type()
                 argst.append(argt)
             rett = self.mgr.env.type_manager.FunctionType(rett, argst)
+            isFunc = True
             
-        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name()),
+        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name(), isFunc),
                                rett)
 #         print("out: %s of type %s" % (res, res.symbol_type()))
         return res
 
-    def fsymbol_name(self, name):
+    def fsymbol_name(self, name, isFunc):
         if self.has_inf_sort:
             prefix = name.rstrip('1234567890')
             if prefix.endswith(":e"):
                 return prefix[:-2]
+            elif not isFunc and prefix.endswith(":i"):
+                return name
             else:
                 if prefix.endswith(":"):
                     suffix = name[len(prefix):]
@@ -453,6 +457,8 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
                         prefix_new = prefix[:-2] + ":i"
                         name_new = prefix_new + ":" + suffix
                         return name_new
+                elif not isFunc and prefix.endswith(":i"):
+                    return name
             return name + ":i"
         else:
             if name.endswith(":i"):
@@ -464,6 +470,8 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
                     prefix_new = prefix[:-3] + self.esuffix
                     name_new = prefix_new + ":" + suffix
                     return name_new
+                elif not isFunc and prefix.endswith(":i"):
+                    return name
         return name + self.esuffix
 
     def fsymbol(self, formula):
@@ -475,6 +483,7 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
         if rett in self.ssubstitutions:
             rett = self.ssubstitutions[rett]
         
+        isFunc = False
         if key.is_function_type():
             fparams = []
             for p in key.param_types:
@@ -483,8 +492,9 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
                     fp = self.ssubstitutions[fp]
                 fparams.append(fp)
             rett = self.mgr.env.type_manager.FunctionType(rett, fparams)
-            
-        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name()),
+            isFunc = True
+
+        res = self.mgr.Symbol(self.fsymbol_name(formula.symbol_name(), isFunc),
                                rett)
 #         print("out: %s of type %s" % (res, res.symbol_type()))
         return res
