@@ -51,6 +51,7 @@ class Environment(object):
     QuantifierOracleClass = pysmt.oracles.QuantifierOracle
     TheoryOracleClass = pysmt.oracles.TheoryOracle
     FreeVarsOracleClass= pysmt.oracles.FreeVarsOracle
+    QuantifierVarsOracleClass= pysmt.oracles.QuantifierVarsOracle
     EnumConstsOracleClass= pysmt.oracles.EnumConstsOracle
     SizeOracleClass = pysmt.oracles.SizeOracle
     AtomsOracleClass = pysmt.oracles.AtomsOracle
@@ -68,6 +69,7 @@ class Environment(object):
         self._qfo = self.QuantifierOracleClass(self)
         self._theoryo = self.TheoryOracleClass(self)
         self._fvo = self.FreeVarsOracleClass(self)
+        self._qvo = self.QuantifierVarsOracleClass(self)
         self._eco = self.EnumConstsOracleClass(self)
         self._sizeo = self.SizeOracleClass(self)
         self._ao = self.AtomsOracleClass(self)
@@ -136,6 +138,11 @@ class Environment(object):
     def fvo(self):
         """ Get the FreeVars Oracle """
         return self._fvo
+
+    @property
+    def qvo(self):
+        """ Get the QuantifierVars Oracle """
+        return self._qvo
 
     @property
     def eco(self):

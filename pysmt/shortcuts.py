@@ -124,6 +124,16 @@ def get_free_variables(formula):
     return get_env().fvo.get_free_variables(formula)
 
 
+def get_quantifier_variables(formula):
+    """Returns the quantifier variables of the formula.
+
+    :param formula: The target formula
+    :type  formula: FNode
+    :returns: Quantifier variables in the formula
+    """
+    return get_env().qvo.get_quantifier_variables(formula)
+
+
 def get_atoms(formula):
     """Returns the set of atoms of the formula.
 

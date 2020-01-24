@@ -71,12 +71,14 @@ class HRPrinter(TreeWalker):
             yield formula.arg(0)
 
     def walk_not(self, formula):
-        self.write("(! ")
+        self.write("~")
+#         self.write("(! ")
         yield formula.arg(0)
-        self.write(")")
+#         self.write(")")
 
     def walk_symbol(self, formula):
-        self.write(quote(formula.symbol_name(), style="'"))
+#         self.write(quote(formula.symbol_name(), style="'"))
+        self.write(formula.symbol_name())
 
     def walk_function(self, formula):
         yield formula.function_name()
@@ -293,13 +295,27 @@ class HRPrinter(TreeWalker):
         yield formula.arg(0)
         self.write(")")
 
+    def walk_iff(self, formula): 
+        if formula.arg(0).is_true():
+            yield formula.arg(1)
+        elif formula.arg(1).is_true():
+            yield formula.arg(0)
+        elif formula.arg(0).is_false():
+            self.write("~")
+            yield formula.arg(1)
+        elif formula.arg(1).is_false():
+            self.write("~")
+            yield formula.arg(0)
+        else:
+            self.walk_nary(formula, " <-> ")
+    
     def walk_and(self, formula): return self.walk_nary(formula, " & ")
     def walk_or(self, formula): return self.walk_nary(formula, " | ")
     def walk_plus(self, formula): return self.walk_nary(formula, " + ")
     def walk_times(self, formula): return self.walk_nary(formula, " * ")
     def walk_div(self, formula): return self.walk_nary(formula, " / ")
     def walk_pow(self, formula): return self.walk_nary(formula, " ^ ")
-    def walk_iff(self, formula): return self.walk_nary(formula, " <-> ")
+#     def walk_iff(self, formula): return self.walk_nary(formula, " <-> ")
     def walk_implies(self, formula): return self.walk_nary(formula, " -> ")
     def walk_minus(self, formula): return self.walk_nary(formula, " - ")
     def walk_equals(self, formula): return self.walk_nary(formula, " = ")

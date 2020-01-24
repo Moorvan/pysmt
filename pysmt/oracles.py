@@ -370,6 +370,50 @@ class FreeVarsOracle(walkers.DagWalker):
 # EOC FreeVarsOracle
 
 
+class QuantifierVarsOracle(walkers.DagWalker):
+    # We have only few categories for this walker.
+    #
+    # - Simple Args simply need to combine the cone/dependencies
+    #   of the children.
+    # - Quantifiers need to include bounded variables
+    # - Constants have no impact
+    # - Symbols have no impact
+
+    def get_quantifier_variables(self, formula):
+        """Returns the set of Symbols appearing free in the formula."""
+        return self.walk(formula)
+
+    @walkers.handles(DEPENDENCIES_SIMPLE_ARGS)
+    def walk_simple_args(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        res = set()
+        for arg in args:
+            res.update(arg)
+        return frozenset(res)
+
+    @walkers.handles(op.QUANTIFIERS)
+    def walk_quantifier(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return args[0].union(formula.quantifier_vars())
+
+    def walk_symbol(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return frozenset()
+
+    @walkers.handles(op.CONSTANTS)
+    def walk_constant(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        return frozenset()
+
+    def walk_function(self, formula, args, **kwargs):
+        res = set()
+        for arg in args:
+            res.update(arg)
+        return frozenset(res)
+
+# EOC FreeVarsOracle
+
+
 class EnumConstsOracle(walkers.DagWalker):
     # We have only few categories for this walker.
     #
