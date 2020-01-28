@@ -307,7 +307,11 @@ class HRPrinter(TreeWalker):
             self.write("~")
             yield formula.arg(0)
         else:
-            self.walk_nary(formula, " <-> ")
+            self.write("(")
+            yield formula.arg(0)
+            self.write(" <-> ")
+            yield formula.arg(1)
+            self.write(")")
     
     def walk_and(self, formula): return self.walk_nary(formula, " & ")
     def walk_or(self, formula): return self.walk_nary(formula, " | ")
