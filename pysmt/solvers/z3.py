@@ -29,6 +29,8 @@ except ImportError:
 # (see https://github.com/Z3Prover/z3/issues/1769)
 z3.set_param('model_compress', False)
 
+# z3.set_param('smt.core.minimize', True)
+
 from six.moves import xrange
 
 
