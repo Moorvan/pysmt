@@ -927,7 +927,7 @@ def Solver(name=None, logic=None, **kwargs):
                                     logic=logic,
                                     **kwargs)
 
-def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all"):
+def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all", **options):
     """Returns a solver supporting unsat core extraction.
 
     :param name: Specify the name of the solver
@@ -938,7 +938,7 @@ def UnsatCoreSolver(name=None, logic=None, unsat_cores_mode="all"):
     """
     return get_env().factory.UnsatCoreSolver(name=name,
                                              logic=logic,
-                                             unsat_cores_mode=unsat_cores_mode)
+                                             unsat_cores_mode=unsat_cores_mode, **options)
 
 
 def QuantifierEliminator(name=None, logic=None):
