@@ -627,6 +627,7 @@ SMTLIB2_LOGICS = frozenset([ AUFLIA,
                              LIA,
                              NIA,
                              NRA,
+                             UF,
                              UFLRA,
                              UFNIA,
                              UFLIRA,
@@ -668,7 +669,7 @@ PYSMT_LOGICS = frozenset([QF_BOOL, QF_IDL, QF_LIA, QF_LRA, QF_RDL, QF_UF, QF_UFI
                           QF_BV, QF_UFBV,
                           QF_ABV, QF_AUFBV, QF_AUFLIA, QF_ALIA, QF_AX,
                           QF_AUFBVLIRA,
-                          QF_NRA, QF_NIA, UFBV, BV,
+                          QF_NRA, QF_NIA, UF, UFBV, BV,
                       ])
 
 # PySMT Logics includes additional features:

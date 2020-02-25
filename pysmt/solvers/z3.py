@@ -210,12 +210,21 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                                            environment=environment,
                                            logic=logic,
                                            **options)
-        try:
-            self.z3 = z3.SolverFor(str(logic))
-        except z3.Z3Exception:
-            self.z3 = z3.Solver()
-        except z3.z3types.Z3Exception:
-            self.z3 = z3.Solver()
+        if (
+            False and
+            str(logic) == "UF"):
+                self.z3 = z3.AndThen(
+#                                 z3.TryFor('default', 1000),
+                                z3.AndThen('qe-light', 'smt'),
+#                                 z3.AndThen('simplify', 'qe-light', 'solve-eqs'),
+                                'smt').solver()
+        else:
+            try:
+                self.z3 = z3.SolverFor(str(logic))
+            except z3.Z3Exception:
+                self.z3 = z3.Solver()
+            except z3.z3types.Z3Exception:
+                self.z3 = z3.Solver()
         self.options(self)
         self.declarations = set()
         self.converter = Z3Converter(environment, z3_ctx=self.z3.ctx)
@@ -350,6 +359,8 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         del self.converter
         del self.z3
 
+    def print_query(self, f):
+        f.write(self.z3.to_smt2())
 
 BOOLREF_SET = op.BOOL_OPERATORS | op.RELATIONS
 ARITHREF_SET = op.IRA_OPERATORS
@@ -601,11 +612,11 @@ class Z3Converter(Converter, DagWalker):
             raise NotImplementedError(
                 "Quantified back conversion is currently not supported")
 
-        assert not len(args) > 2 or \
-            (z3.is_and(expr) or z3.is_or(expr) or
-             z3.is_add(expr) or z3.is_mul(expr) or
-             (len(args) == 3 and (z3.is_ite(expr) or z3.is_array_store(expr)))),\
-            "Unexpected n-ary term: %s" % expr
+#         assert not len(args) > 2 or \
+#             (z3.is_and(expr) or z3.is_or(expr) or
+#              z3.is_add(expr) or z3.is_mul(expr) or
+#              (len(args) == 3 and (z3.is_ite(expr) or z3.is_array_store(expr)))),\
+#             "Unexpected n-ary term: %s" % expr
 
         res = None
         try:
@@ -654,7 +665,11 @@ class Z3Converter(Converter, DagWalker):
                 return self.mgr._Algebraic(Numeral(expr))
             elif isinstance(expr.sort(), z3.DatatypeSortRef):
                 symb_type = self._z3_to_type(expr.sort())
-                return self.mgr.Enum(str(expr), symb_type)
+                name = str(expr)
+                if name in self._z3EnumConsts:
+                    return self.mgr.Enum(name, symb_type)
+                else:
+                    return self.mgr.Symbol(name, symb_type)
             else:
                 # it must be a symbol
                 try:
@@ -861,6 +876,9 @@ class Z3Converter(Converter, DagWalker):
         sname = str(formula.constant_value())
         tp = formula.constant_type()
         sort_ast = self._type_to_z3(tp).ast
+        if sname not in self._z3EnumConsts:
+            print(sname)
+            print(self._z3EnumConsts)
         assert(sname in self._z3EnumConsts)
         z3term = self._z3EnumConsts[sname].ast
 #         self._z3EnumSorts[key] = (sort, value)
@@ -1072,14 +1090,23 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         self.environment = environment
         self.logic = logic
         self.converter = Z3Converter(environment, z3.main_ctx())
+        self._cache = {}
 
     def eliminate_quantifiers(self, formula):
-        logic = get_logic(formula, self.environment)
-        if not logic <= LRA and not logic <= LIA:
-            raise PysmtValueError("Z3 quantifier elimination only "\
-                                  "supports LRA or LIA without combination."\
-                                  "(detected logic is: %s)" % str(logic))
+        if formula in self._cache:
+            return self._cache[formula]
+        
+#         logic = get_logic(formula, self.environment)
+#         if not logic <= LRA and not logic <= LIA:
+#             raise PysmtValueError("Z3 quantifier elimination only "\
+#                                   "supports LRA or LIA without combination."\
+#                                   "(detected logic is: %s)" % str(logic))
 
+#         print("pre: ")
+#         for f in formula.get_free_variables():
+#             print(f, f.symbol_type(), type(f))
+#         for f in f.get_enum_constants():
+#             print("enum: ", f, type(f))
         simplifier = z3.Tactic('simplify')
         eliminator = z3.Tactic('qe')
 
@@ -1088,10 +1115,15 @@ class Z3QuantifierEliminator(QuantifierEliminator):
                        pull_cheap_ite=True,
                        ite_extra_rules=True).as_expr()
         res = eliminator(f).as_expr()
-
         pysmt_res = None
         try:
             pysmt_res = self.converter.back(res)
+#             print("post: ")
+#             for f in pysmt_res.get_free_variables():
+#                 print(f, f.symbol_type(), type(f))
+#             for f in pysmt_res.get_enum_constants():
+#                 print("enum: ", f, type(f))
+                
         except ConvertExpressionError:
             if logic <= LRA:
                 raise
@@ -1103,6 +1135,7 @@ class Z3QuantifierEliminator(QuantifierEliminator):
                 "exception object" % str(res)),
                                           expression=res)
 
+        self._cache[formula] = pysmt_res
         return pysmt_res
 
     def _exit(self):

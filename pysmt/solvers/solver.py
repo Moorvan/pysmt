@@ -285,6 +285,9 @@ class Solver(object):
         if formula.get_type() != BOOL:
             raise PysmtTypeError("Argument must be boolean.")
 
+    def print_query(self, f):
+        raise NotImplementedError
+
 
 class IncrementalTrackingSolver(Solver):
     """A solver that keeps track of the asserted formulae
