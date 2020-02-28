@@ -18,7 +18,7 @@
 from __future__ import absolute_import
 
 from pysmt.exceptions import SolverAPINotFound
-from z3.z3core import Z3_inc_ref, Ast, Z3_benchmark_to_smtlib_string
+from z3.z3core import Z3_inc_ref
 
 try:
     import z3
@@ -28,9 +28,6 @@ except ImportError:
 # Keep array models expressed as values instead of Lambdas
 # (see https://github.com/Z3Prover/z3/issues/1769)
 z3.set_param('model_compress', False)
-# z3.enable_trace("before_simplifier")
-# z3.enable_trace("after_simplifier")
-# z3.enable_trace("unit_subsumption_tactic")
 
 # z3.set_param('smt.core.minimize', True)
 
@@ -213,58 +210,41 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                                            environment=environment,
                                            logic=logic,
                                            **options)
-        self.logic = str(logic)
-        self.environment = environment
-        
-#         self.z3 = z3.AndThen(
-# #                                 z3.TryFor('default', 1000),
-#                         z3.AndThen('qe-light', 'smt'),
-# #                                 z3.AndThen('simplify', 'qe-light', 'solve-eqs'),
-#                         'smt').solver()
-        try:
-            self.z3 = z3.SolverFor(self.logic)
-        except z3.Z3Exception:
-            self.z3 = z3.Solver()
-        except z3.z3types.Z3Exception:
-            self.z3 = z3.Solver()
-        self.z3converter = Z3Converter(self.environment, z3_ctx=self.z3.ctx)
-        
-        self.z3main = self.z3
-        self.converter = self.z3converter
-        self.qf = False
-        
+        if (
+            False and
+            str(logic) == "UF"):
+                self.z3 = z3.AndThen(
+#                                 z3.TryFor('default', 1000),
+                                z3.AndThen('qe-light', 'smt'),
+#                                 z3.AndThen('simplify', 'qe-light', 'solve-eqs'),
+                                'smt').solver()
+        else:
+            try:
+                self.z3 = z3.SolverFor(str(logic))
+            except z3.Z3Exception:
+                self.z3 = z3.Solver()
+            except z3.z3types.Z3Exception:
+                self.z3 = z3.Solver()
         self.options(self)
         self.declarations = set()
+        self.converter = Z3Converter(environment, z3_ctx=self.z3.ctx)
         self.mgr = environment.formula_manager
 
         self._name_cnt = 0
+        
+        self.qf = False
+        self.cache_qf = {}
         return
-    
+
     def enable_qf(self):
         self.qf = True
-#         try:
-#             self.z3qf = z3.SolverFor(self.logic, ctx=self.z3.ctx)
-#         except z3.Z3Exception:
-#             self.z3qf = z3.Solver(ctx=self.z3.ctx)
-#         except z3.z3types.Z3Exception:
-#             self.z3qf = z3.Solver(ctx=self.z3.ctx)
-        try:
-            self.z3qf = z3.SolverFor(self.logic)
-        except z3.Z3Exception:
-            self.z3qf = z3.Solver()
-        except z3.z3types.Z3Exception:
-            self.z3qf = z3.Solver()
-        self.z3qfconverter = Z3Converter(self.environment, z3_ctx=self.z3qf.ctx)
-        self.qfcache = {}
-#         self.z3main = self.z3qf
-#         self.converter = self.z3qfconverter
     
-    def qf_form(self, formula):
+    def quantifier_free(self, formula):
         assert(self.qf)
-        term = self.z3qfconverter.convert(formula)
+        term = self.converter.convert(formula)
 #         return term
-        if term in self.qfcache:
-            return self.qfcache[term]
+        if term in self.cache_qf:
+            return self.cache_qf[term]
         simplifier = z3.Tactic('simplify')
         eliminator = z3.Tactic('qe')
         res = term
@@ -274,14 +254,19 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                         ).as_expr()
         res = eliminator(res).as_expr()
 #         print(term, " -> ", res)
-        self.qfcache[term] = res
+        self.cache_qf[term] = res
         return res
 
+    def get_term(self, formula):
+        return self.converter.convert(formula)
+        if self.qf:
+            return self.quantifier_free(formula)
+        else:
+            return self.converter.convert(formula)
+        
     @clear_pending_pop
     def _reset_assertions(self):
         self.z3.reset()
-        if self.qf:
-            self.z3qf.reset()
         self.options(self)
 
     @clear_pending_pop
@@ -291,65 +276,36 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
     @clear_pending_pop
     def _add_assertion(self, formula, named=None):
         self._assert_is_boolean(formula)
-        term = self.z3converter.convert(formula)
+        term = self.get_term(formula)
 
         if (named is not None) and (self.options.unsat_cores_mode is not None):
             # TODO: IF unsat_cores_mode is all, then we add this fresh variable.
             # Otherwise, we should track this only if it is named.
             key = self.mgr.FreshSymbol(template="_assertion_%d")
-            tkey = self.z3converter.convert(key)
+            tkey = self.get_term(key)
             self.z3.assert_and_track(term, tkey)
-            if self.qf:
-                self.z3qf.assert_and_track(self.qf_form(formula), self.qf_form(key))
             return (key, named, formula)
         else:
             self.z3.add(term)
-            if self.qf:
-                self.z3qf.add(self.qf_form(formula))
             return formula
 
     def get_model(self):
-        return Z3Model(self.environment, self.z3main.model())
-    
-    def _solve_with_timeout(self, timeout, bool_ass=[], bool_assqf=[]):
-#         if False and self.qf:
-        if self.qf:
-            self.z3.set("timeout", timeout)
-            res = self.z3.check(*bool_ass)
-            self.z3.set("timeout", 4294967295)
-            if str(res) != 'unknown':
-                self.z3main = self.z3
-                self.converter = self.z3converter
-                return res
-            
-            self.z3qf.set("timeout", timeout)
-            res = self.z3qf.check(*bool_assqf)
-            self.z3qf.set("timeout", 4294967295)
-            if str(res) != 'unknown':
-                self.z3main = self.z3qf
-                self.converter = self.z3qfconverter
-                print("faster qf")
-                return res
-            
-            print("both q and qf failed")
+        return Z3Model(self.environment, self.z3.model())
 
-        res = self.z3.check(*bool_ass)
-        self.z3main = self.z3
-        self.converter = self.z3converter
-        return res
-        
-    
+    def _set_timeout(self, timeout):
+        if self.qf:
+            self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
+        else:
+            self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
+            
     @clear_pending_pop
     def _solve(self, assumptions=None):
         if assumptions is not None:
             bool_ass = []
-            bool_assqf = []
             other_ass = []
             for x in assumptions:
                 if x.is_literal():
-                    bool_ass.append(self.z3converter.convert(x))
-                    if self.qf:
-                        bool_assqf.append(self.z3qfconverter.convert(x))
+                    bool_ass.append(self.get_term(x))
                 else:
                     other_ass.append(x)
 
@@ -357,11 +313,9 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                 self.push()
                 self.add_assertion(self.mgr.And(other_ass))
                 self.pending_pop = True
-            res = self._solve_with_timeout(10000, bool_ass, bool_assqf)
-#             res = self.z3main.check(*bool_ass)
+            res = self.z3.check(*bool_ass)
         else:
-            res = self._solve_with_timeout(10000)
-#             res = self.z3main.check()
+            res = self.z3.check()
 
         sres = str(res)
         assert sres in ['unknown', 'sat', 'unsat']
@@ -394,7 +348,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                                     " '%s' command after the last call to" \
                                     " solve()" % self.last_command)
 
-        assumptions = self.z3main.unsat_core()
+        assumptions = self.z3.unsat_core()
         pysmt_assumptions = set(self.converter.back(t) for t in assumptions)
 
         res = {}
@@ -417,15 +371,11 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
     def _push(self, levels=1):
         for _ in xrange(levels):
             self.z3.push()
-            if self.qf:
-                self.z3qf.push()
 
     @clear_pending_pop
     def _pop(self, levels=1):
         for _ in xrange(levels):
             self.z3.pop()
-            if self.qf:
-                self.z3qf.pop()
 
     def print_model(self, name_filter=None):
         for var in self.declarations:
@@ -435,41 +385,19 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
     def get_value(self, item):
 #         self._assert_no_function_type(item)
 
-        titem = self.converter.convert(item)
-        z3_res = self.z3main.model().eval(titem, model_completion=True)
-        res = self.converter.back(z3_res, self.z3main.model())
+        titem = self.get_term(item)
+        z3_res = self.z3.model().eval(titem, model_completion=True)
+        res = self.converter.back(z3_res, self.z3.model())
         if not res.is_constant():
             return res.simplify()
         return res
 
     def _exit(self):
-        del self.z3converter
+        del self.converter
         del self.z3
-        if self.qf:
-            del self.z3qf
-            del self.z3qfconverter
 
-    def print_query(self, f, formulae=[]):
-        es = self.z3main.assertions()
-        oldSz = len(es)
-        for formula in formulae:
-            self._assert_is_boolean(formula)
-            term = self.converter.convert(formula)
-            es.push(term)
-        assert(oldSz == len(self.z3main.assertions()))
-
-        sz = len(es)
-        sz1 = sz
-        if sz1 > 0:
-            sz1 -= 1
-        v = (Ast * sz1)()
-        for i in range(sz1):
-            v[i] = es[i].as_ast()
-        if sz > 0:
-            e = es[sz1].as_ast()
-        else:
-            e = BoolVal(True, self.z3main.ctx).as_ast()
-        f.write(Z3_benchmark_to_smtlib_string(self.z3main.ctx.ref(), "benchmark generated from python API", "", "unknown", "", sz1, v, e))
+    def print_query(self, f):
+        f.write(self.z3.to_smt2())
 
 BOOLREF_SET = op.BOOL_OPERATORS | op.RELATIONS
 ARITHREF_SET = op.IRA_OPERATORS
@@ -1200,7 +1128,7 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         self.logic = logic
         self.converter = Z3Converter(environment, z3.main_ctx())
         self._cache = {}
-    
+
     def eliminate_quantifiers(self, formula):
         if formula in self._cache:
             return self._cache[formula]
@@ -1223,7 +1151,7 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         s = simplifier(f, elim_and=True,
                        pull_cheap_ite=True,
                        ite_extra_rules=True).as_expr()
-        res = eliminator(s).as_expr()
+        res = eliminator(f).as_expr()
         pysmt_res = None
         try:
             pysmt_res = self.converter.back(res)

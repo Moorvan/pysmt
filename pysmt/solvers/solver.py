@@ -22,6 +22,7 @@ from pysmt.solvers.options import SolverOptions
 from pysmt.exceptions import (SolverReturnedUnknownResultError, PysmtValueError,
                               SolverNotConfiguredForUnsatCoresError,
                               PysmtTypeError, SolverStatusError)
+from pysmt.decorators import clear_pending_pop
 
 
 class Solver(object):
@@ -346,6 +347,15 @@ class IncrementalTrackingSolver(Solver):
         """
         return self._assertion_stack
 
+    @clear_pending_pop
+    def export_assertions(self):
+        """Returns the assertions that are still in the solver.
+
+        Returns the list of results of calls to _add_assertion() that
+        are still asserted in the solver (after clearing pending pop
+        """
+        return (self._backtrack_points, self._assertion_stack, self._named_assertions)
+
     @property
     def named_assertions(self):
         """Returns the list of named assertions that are still in the solver.
@@ -384,6 +394,12 @@ class IncrementalTrackingSolver(Solver):
     def _solve(self, assumptions=None):
         raise NotImplementedError
 
+    def _set_timeout(self, timeout):
+        NotImplementedError
+        
+    def set_timeout(self, timeout=0):
+        self._set_timeout(timeout)
+        
     def solve(self, assumptions=None):
         try:
             res = self._solve(assumptions=assumptions)
