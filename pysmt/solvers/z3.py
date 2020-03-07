@@ -1145,13 +1145,17 @@ class Z3QuantifierEliminator(QuantifierEliminator):
 #         for f in f.get_enum_constants():
 #             print("enum: ", f, type(f))
         simplifier = z3.Tactic('simplify')
+        propagater = z3.Tactic('propagate-values')
         eliminator = z3.Tactic('qe')
 
         f = self.converter.convert(formula)
         s = simplifier(f, elim_and=True,
                        pull_cheap_ite=True,
                        ite_extra_rules=True).as_expr()
-        res = eliminator(f).as_expr()
+        p = propagater(s).as_expr()
+#         res = eliminator(f).as_expr()
+#         res = eliminator(s).as_expr()
+        res = eliminator(p).as_expr()
         pysmt_res = None
         try:
             pysmt_res = self.converter.back(res)
