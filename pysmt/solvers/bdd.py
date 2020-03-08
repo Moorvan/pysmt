@@ -274,11 +274,14 @@ class BddConverter(Converter, DagWalker):
         self._bddEnumVars = {}
         self._bddVarEqEnum = {}
         self.numvars = 0
+        self.typeok = self.ddmanager.One()
+        self.typeconst = []
 
     @catch_conversion_error
     def convert(self, formula):
         """Convert a PySMT formula into a BDD."""
-        return self.walk(formula)
+        res = self.walk(formula)
+        return self.ddmanager.And(self.typeok, res)
 
     def back(self, bdd_expr):
         return self._walk_back(bdd_expr, self.fmgr).simplify()
@@ -309,7 +312,7 @@ class BddConverter(Converter, DagWalker):
             self.numvars += 1
             self.idx2var[node.NodeReadIndex()] = var
             self.var2node[var] = node
-#             print("adding var: %s <-> %s" % (var, self.var2node[var]))
+#             print("adding var: %s <-> %s" % (var, self.var2node[var].NodeReadIndex()))
 
     def get_eq_var(self, a):
         if a in self.atom2var:
@@ -322,17 +325,22 @@ class BddConverter(Converter, DagWalker):
         self.declare_variable(avar)
         self.atom2var[a] = avar
         self.var2atom[avar] = a
-#         print("adding vareq: %s := %s <-> %s" % (a, avar, self.var2node[avar]))
+#         print("adding vareq: %s := %s <-> %s" % (a, avar, self.var2node[avar].NodeReadIndex()))
         return avar
     
     def get_eq_const(self, lhs, rhs):
+        if lhs.is_enum_constant() and rhs.is_enum_constant:
+            if lhs == rhs:
+                return self.ddmanager.One()
+            else:
+                return self.ddmanager.Zero()
         if lhs not in self._bddVarEqEnum:
             self._bddVarEqEnum[lhs] = {}
         if rhs not in self._bddVarEqEnum[lhs]:
             atom = self.fmgr.EqualsOrIff(lhs, rhs)
             avar = self.get_eq_var(atom)
             self._bddVarEqEnum[lhs][rhs] = avar
-#             print("adding consteq: %s = %s := %s <-> %s" % (lhs, rhs, avar, self.var2node[avar]))
+#             print("adding consteq: %s = %s := %s <-> %s" % (lhs, rhs, avar, self.var2node[avar].NodeReadIndex()))
         avar = self._bddVarEqEnum[lhs][rhs]
         return self.var2node[avar]
 
@@ -340,20 +348,38 @@ class BddConverter(Converter, DagWalker):
         eq = self.get_eq_const(lhs, rhs)
         return self.ddmanager.Not(eq)
 
-    def get_function_node(self, func):
+    def get_relation_node(self, func):
         if func in self.atom2var:
             avar = self.atom2var[func]
             return self.var2node[avar]
-#         if not func.is_symbol():
-#             raise PysmtTypeError("Trying to declare a function from: %s" % func)
         self.atoms.add(func)
         name = "_func%d" % len(self.atoms)
         avar = self.fmgr.Symbol(name)
         self.declare_variable(avar)
         self.atom2var[func] = avar
         self.var2atom[avar] = func
-#         print("adding function: %s := %s <-> %s" % (func, avar, self.var2node[avar]))
+#         print("adding relation: %s := %s <-> %s" % (func, avar, self.var2node[avar].NodeReadIndex()))
         return self.var2node[avar]
+
+    def get_function_node(self, formula, ft):
+        if formula not in self._bddEnumVars:
+            res = self.ddmanager.Zero()
+            dom = [self.fmgr.Enum(d, ft) for d in ft.domain]
+            for d in dom:
+                node = self.get_eq_const(formula, d)
+                res = self.ddmanager.Or(res, node)
+            for i in range(len(dom)-1):
+                lhs = self.get_neq_const(formula, dom[i])
+                for j in range(i+1, len(dom)):
+                    rhs = self.get_neq_const(formula, dom[j])
+                    node = self.ddmanager.Or(lhs, rhs)
+                    res = self.ddmanager.And(node, res)
+            self._bddEnumVars[formula] = res
+#             print("adding function: %s := %s" % (formula, res.NodeReadIndex()))
+            self.typeconst.append(res)
+            self.typeok = self.ddmanager.And(self.typeok, res)
+#         return self.ddmanager.One()
+        return self._bddEnumVars[formula]
 
     def walk_and(self, formula, args, **kwargs):
         res = args[0]
@@ -401,19 +427,33 @@ class BddConverter(Converter, DagWalker):
     def walk_enum_constant(self, formula, **kwargs):
         if formula not in self._bddEnumConsts:
             self._bddEnumConsts[formula] = self.ddmanager.One()
+#             print("ec: %s" % formula)
+#             print("sym: %s" % formula.is_symbol())
         return self._bddEnumConsts[formula]
 
     def walk_equals(self, formula, args, **kwargs):
         lhs = formula.arg(0)
         rhs = formula.arg(1)
+        if lhs.is_enum_constant() and rhs.is_enum_constant():
+#             print("lhs: %s" % lhs)
+#             print("lsym: %s" % lhs.is_symbol())
+#             print("rhs: %s" % rhs)
+#             print("rsym: %s" % rhs.is_symbol())
+#             assert(0)
+            if lhs == rhs:
+                return self.ddmanager.One()
+            else:
+                return self.ddmanager.Zero()
         if rhs.is_symbol() or rhs.is_function_application():
             lhs, rhs = rhs, lhs
         if lhs.is_symbol() or lhs.is_function_application():
-            rt = lhs.symbol_type()
+            s = lhs
             if lhs.is_function_application():
-                rt = lhs.return_type
+                s = lhs.function_name()
+            rt = s.symbol_type()
+            if lhs.is_function_application():
+                rt = rt.return_type
             if rt.is_enum_type():
-                rhs = formula.arg(1)
                 dom = [self.fmgr.Enum(d, rt) for d in rt.domain]
                 res = self.ddmanager.Zero()
                 for d in dom:
@@ -423,44 +463,82 @@ class BddConverter(Converter, DagWalker):
                     res = self.ddmanager.Or(res, node)
                 for a in args:
                     res = self.ddmanager.And(a, res)
+#                 add = self.ddmanager.BddToAdd(res)
+#                 self.ddmanager.DumpDot(add)
+#                 assert(0)
                 return res
             elif rt == types.BOOL:
                 return self.walk_iff(formula, args, **kwargs)
         raise PysmtTypeError("Trying to declare equality %s" % formula)
+    
+    def instantiate_function(self, f, ft, fc, fi):
+#         print("processing: %s" % f)
+        instantiated = True
+        for idx, paramt in enumerate(ft.param_types):
+            if paramt.is_enum_type():
+                arg = f.arg(idx)
+                if not arg.is_enum_constant():
+                    instantiated = False
+                    dom = [self.fmgr.Enum(d, paramt) for d in paramt.domain]
+                    for d in dom:
+                        c = self.get_eq_const(arg, d)
+                        fcn = self.ddmanager.And(fc, c)
+#                         add = self.ddmanager.BddToAdd(fc)
+#                         self.ddmanager.DumpDot(add)
+#                         assert(0)
+                        subs = {}
+                        subs[arg] = d
+                        fn = f.substitute(subs)
+#                         print("%s to %s" % (f, fn))
+                        self.instantiate_function(fn, ft, fcn, fi)
+        if instantiated:
+            res = fc
+            if ft.return_type == types.BOOL:
+                node = self.get_relation_node(f)
+                res = self.ddmanager.And(node, res)
+            else:
+                node = self.get_function_node(f, ft.return_type)
+                res = self.ddmanager.And(node, res)
+#             print("instance: %s" % f)
+#             add = self.ddmanager.BddToAdd(res)
+#             self.ddmanager.DumpDot(add)
+#             assert(0)
+            fi.append(res)
         
     def walk_function(self, formula, args, **kwargs):
         f = formula.function_name()
         ft = f.symbol_type()
-        if ft.return_type == types.BOOL:
-            res = args[0]
-            for a in args[1:]:
-                res = self.ddmanager.And(a, res)
-            node = self.get_function_node(formula)
+        res = args[0]
+        for a in args[1:]:
+            res = self.ddmanager.And(a, res)
+        if (ft.return_type == types.BOOL) or ft.return_type.is_enum_type():
+            fi = []
+            self.instantiate_function(formula, ft, self.ddmanager.One(), fi)
+#             assert(0)
+            node = fi[0]
+            for a in fi[1:]:
+                node = self.ddmanager.Or(a, node)
             res = self.ddmanager.And(res, node)
+#             if (ft.return_type == types.BOOL):
+#                 res = self.ddmanager.And(res, node)
+#             else:
+#                 self.typeconst.append(node)
+#                 self.typeok = self.ddmanager.And(self.typeok, node)
             return res
         raise PysmtTypeError("Trying to declare function %s of return type %s" % (formula, ft.return_type))
     
     def walk_symbol(self, formula, **kwargs):
         ft = formula.symbol_type()
         if ft.is_enum_type():
-            if formula not in self._bddEnumVars:
-                res = self.ddmanager.Zero()
-                dom = [self.fmgr.Enum(d, ft) for d in ft.domain]
-                for d in dom:
-                    node = self.get_eq_const(formula, d)
-                    res = self.ddmanager.Or(res, node)
-                for i in range(len(dom)-1):
-                    lhs = self.get_neq_const(formula, dom[i])
-                    for j in range(i+1, len(dom)):
-                        rhs = self.get_neq_const(formula, dom[j])
-                        node = self.ddmanager.Or(lhs, rhs)
-                        res = self.ddmanager.And(node, res)
-                self._bddEnumVars[formula] = res
-            return self._bddEnumVars[formula]
+#             print("sym: %s" % formula)
+            return self.get_function_node(formula, ft)
         elif not formula.is_symbol(types.BOOL):
             raise ConvertExpressionError("Cannot handle given formula %s of type %s" % (str(formula), formula.get_type()))
         if formula not in self.var2node:
             self.declare_variable(formula)
+            self.atom2var[formula] = formula
+            self.var2atom[formula] = formula
+            print("adding varbool: %s := %s <-> %s" % (formula, formula, self.var2node[formula].NodeReadIndex()))
         res = self.var2node[formula]
         return res
 
