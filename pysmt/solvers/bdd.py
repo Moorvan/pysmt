@@ -276,11 +276,33 @@ class BddConverter(Converter, DagWalker):
         self.numvars = 0
         self.typeok = self.ddmanager.One()
         self.typeconst = []
+        self.subsarray = None
+        self.newvar_added = False
+        self.bound_vars = set()
+        self.bound_atoms = []
+        self.count = 0
+        self.othervars = []
+        self.pnset = False
+    
+    def set_subs_array(self):
+        if self.newvar_added:
+            self.subsarray = repycudd.DdArray(self.ddmanager, self.numvars)
+            zero = self.ddmanager.Zero()
+            for i, var in self.idx2var.items():
+                self.subsarray[i] = self.var2node[var]
+            self.newvar_added = False
 
     @catch_conversion_error
     def convert(self, formula):
+        print("converting: %s" % formula)
         """Convert a PySMT formula into a BDD."""
+#         self.bound_vars = formula.get_quantifier_variables()
         res = self.walk(formula)
+        cubeBound = self.cube_from_var_list(self.othervars)
+        res = self.ddmanager.ExistAbstract(res, cubeBound)
+#         if len(self.bound_atoms) != 0:
+#             cubeBound = self.cube_from_var_list(self.bound_atoms)
+#             res = self.ddmanager.ExistAbstract(res, cubeBound)
         return self.ddmanager.And(self.typeok, res)
 
     def back(self, bdd_expr):
@@ -308,13 +330,21 @@ class BddConverter(Converter, DagWalker):
             raise PysmtTypeError("Trying to declare as a variable something "
                                  "that is not a symbol: %s" % var)
         if var not in self.var2node:
-            node = self.ddmanager.NewVar()
+#             node = self.ddmanager.NewVar()
+            node = self.ddmanager.NewVarAtLevel(0)
             self.numvars += 1
             self.idx2var[node.NodeReadIndex()] = var
             self.var2node[var] = node
-#             print("adding var: %s <-> %s" % (var, self.var2node[var].NodeReadIndex()))
+            self.newvar_added = True
+            if self.pnset:
+                self.othervars.append(var)
+                print("adding other var: %s <-> %s" % (var, self.var2node[var].NodeReadIndex()))
+            else:
+                print("adding pn var: %s <-> %s" % (var, self.var2node[var].NodeReadIndex()))
+                pass
 
-    def get_eq_var(self, a):
+    def get_eq_var(self, lhs, rhs):
+        a = self.fmgr.EqualsOrIff(lhs, rhs)
         if a in self.atom2var:
             return self.atom2var[a]
         if not a.is_equals():
@@ -325,7 +355,7 @@ class BddConverter(Converter, DagWalker):
         self.declare_variable(avar)
         self.atom2var[a] = avar
         self.var2atom[avar] = a
-#         print("adding vareq: %s := %s <-> %s" % (a, avar, self.var2node[avar].NodeReadIndex()))
+        print("adding vareq: %s := %s <-> %s" % (a, avar, self.var2node[avar].NodeReadIndex()))
         return avar
     
     def get_eq_const(self, lhs, rhs):
@@ -337,10 +367,11 @@ class BddConverter(Converter, DagWalker):
         if lhs not in self._bddVarEqEnum:
             self._bddVarEqEnum[lhs] = {}
         if rhs not in self._bddVarEqEnum[lhs]:
-            atom = self.fmgr.EqualsOrIff(lhs, rhs)
-            avar = self.get_eq_var(atom)
+            avar = self.get_eq_var(lhs, rhs)
             self._bddVarEqEnum[lhs][rhs] = avar
-#             print("adding consteq: %s = %s := %s <-> %s" % (lhs, rhs, avar, self.var2node[avar].NodeReadIndex()))
+            if lhs in self.bound_vars:
+                self.bound_atoms.append(avar)
+            print("adding consteq: %s = %s := %s <-> %s" % (lhs, rhs, avar, self.var2node[avar].NodeReadIndex()))
         avar = self._bddVarEqEnum[lhs][rhs]
         return self.var2node[avar]
 
@@ -358,7 +389,7 @@ class BddConverter(Converter, DagWalker):
         self.declare_variable(avar)
         self.atom2var[func] = avar
         self.var2atom[avar] = func
-#         print("adding relation: %s := %s <-> %s" % (func, avar, self.var2node[avar].NodeReadIndex()))
+        print("adding relation: %s := %s <-> %s" % (func, avar, self.var2node[avar].NodeReadIndex()))
         return self.var2node[avar]
 
     def get_function_node(self, formula, ft):
@@ -376,26 +407,47 @@ class BddConverter(Converter, DagWalker):
                     res = self.ddmanager.And(node, res)
             self._bddEnumVars[formula] = res
 #             print("adding function: %s := %s" % (formula, res.NodeReadIndex()))
-            self.typeconst.append(res)
-            self.typeok = self.ddmanager.And(self.typeok, res)
+            
+            if formula not in self.bound_vars:
+                self.typeconst.append(res)
+                self.typeok = self.ddmanager.And(self.typeok, res)
 #         return self.ddmanager.One()
         return self._bddEnumVars[formula]
 
     def walk_and(self, formula, args, **kwargs):
+        self.count += 1
+        print(self.count)
+        
+        print("processing and: \n\t%s" % formula)
         res = args[0]
-        for a in args[1:]:
+        
+#         for a in args[1:]:
+        for i in range(1, len(args)):
+            a = args[i]
+            if self.count == 4:
+                print("anding: \n\t%s" % formula.arg(i))
+#                 add = self.ddmanager.BddToAdd(a)
+#                 self.ddmanager.DumpBlif(add)
             res = self.ddmanager.And(a, res)
+    #         assert(0)
+    
+        print("done")
         return res
 
     def walk_or(self, formula, args, **kwargs):
+        print("processing or: \n\t%s" % formula)
         res = args[0]
         for a in args[1:]:
             res = self.ddmanager.Or(res,a)
+        print("done")
         return res
 
     def walk_not(self, formula, args, **kwargs):
-        return self.ddmanager.Not(args[0])
-
+        print("not op: %s" % formula)
+        res = self.ddmanager.Not(args[0])
+        print("not is done")
+        return res
+    
     def walk_implies(self, formula, args, **kwargs):
         lhs, rhs = args
         return self.ddmanager.Or(lhs.Not(), rhs)
@@ -406,16 +458,70 @@ class BddConverter(Converter, DagWalker):
         neg = self.ddmanager.And(lhs.Not(), rhs.Not())
         return self.ddmanager.Or(pos, neg)
 
-    def walk_forall(self, formula, args, **kwargs):
-        f = args[0]
-        cube = self.cube_from_var_list(formula.quantifier_vars())
-        res = self.ddmanager.UnivAbstract(f, cube)
-        return res
+    def walk_ite(self, formula, args, **kwargs):
+        f, g, h = args
+        return self.ddmanager.Ite(f, g, h)
 
     def walk_exists(self, formula, args, **kwargs):
+        f = self.ddmanager.Not(args[0])
+        qvars = formula.quantifier_vars()
+        res = self.process_forall(f, qvars, formula)
+        return self.ddmanager.Not(res)
+        
+    def walk_forall(self, formula, args, **kwargs):
         f = args[0]
-        cube = self.cube_from_var_list(formula.quantifier_vars())
-        res = self.ddmanager.ExistAbstract(f, cube)
+        qvars = formula.quantifier_vars()
+        return self.process_forall(f, qvars, formula)
+        
+    def process_forall(self, f, qvars, formula):
+        one = self.ddmanager.One()
+        zero = self.ddmanager.Zero()
+        
+#         self.count += 1
+#         print(self.count)
+#         draw = (self.count == 17)
+#         if draw:
+#             print("processing forall: \n\t%s" % formula)
+            
+        self.set_subs_array()
+        queue = [f]
+        for q in qvars:
+            qt = q.symbol_type()
+            if qt.is_enum_type():
+                if q not in self._bddVarEqEnum:
+                    continue
+                dom = [self.fmgr.Enum(d, qt) for d in qt.domain]
+                queue_new = []
+                while len(queue) != 0:
+                    curr = queue.pop()
+                    curr_new = one
+                    for d in self._bddVarEqEnum[q]:
+#                         print("setting %s to %s" % (q, d))
+                        for ec, avar in self._bddVarEqEnum[q].items():
+                            node = self.var2node[avar]
+                            idx = node.NodeReadIndex()
+                            rhs = one if (d == ec) else zero
+                            self.subsarray[idx] = rhs
+                        node_new = self.ddmanager.VectorCompose(curr, self.subsarray)
+                        curr_new = self.ddmanager.And(node_new, curr_new)
+                        queue_new.append(curr_new)
+                queue = queue_new
+                for ec, avar in self._bddVarEqEnum[q].items():
+                    node = self.var2node[avar]
+                    idx = node.NodeReadIndex()
+                    self.subsarray[idx] = node
+                    
+        cubeBound = self.cube_from_var_list(self.bound_atoms)
+        res = queue[0]
+        for a in queue[1:]:
+            res = self.ddmanager.And(res,a)
+#         res = self.ddmanager.ExistAbstract(res, cubeBound)
+
+#         if draw:
+#             print("drawing forall: \n\t%s" % formula)
+#             add = self.ddmanager.BddToAdd(res)
+#             self.ddmanager.DumpDot(add)
+#             assert(0)
         return res
 
     def walk_bool_constant(self, formula, **kwargs):
@@ -513,6 +619,7 @@ class BddConverter(Converter, DagWalker):
             res = self.ddmanager.And(a, res)
         if (ft.return_type == types.BOOL) or ft.return_type.is_enum_type():
             fi = []
+            print("instantiate_function: %s" % formula)
             self.instantiate_function(formula, ft, self.ddmanager.One(), fi)
 #             assert(0)
             node = fi[0]
@@ -524,6 +631,10 @@ class BddConverter(Converter, DagWalker):
 #             else:
 #                 self.typeconst.append(node)
 #                 self.typeok = self.ddmanager.And(self.typeok, node)
+            print("dumping dot for %s" % formula)
+            add = self.ddmanager.BddToAdd(res)
+            self.ddmanager.DumpDot(add)
+            print("done")
             return res
         raise PysmtTypeError("Trying to declare function %s of return type %s" % (formula, ft.return_type))
     
