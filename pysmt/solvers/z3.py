@@ -210,21 +210,12 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
                                            environment=environment,
                                            logic=logic,
                                            **options)
-        if (
-            False and
-            str(logic) == "UF"):
-                self.z3 = z3.AndThen(
-#                                 z3.TryFor('default', 1000),
-                                z3.AndThen('qe-light', 'smt'),
-#                                 z3.AndThen('simplify', 'qe-light', 'solve-eqs'),
-                                'smt').solver()
-        else:
-            try:
-                self.z3 = z3.SolverFor(str(logic))
-            except z3.Z3Exception:
-                self.z3 = z3.Solver()
-            except z3.z3types.Z3Exception:
-                self.z3 = z3.Solver()
+        try:
+            self.z3 = z3.SolverFor(str(logic))
+        except z3.Z3Exception:
+            self.z3 = z3.Solver()
+        except z3.z3types.Z3Exception:
+            self.z3 = z3.Solver()
         self.options(self)
         self.declarations = set()
         self.converter = Z3Converter(environment, z3_ctx=self.z3.ctx)
@@ -292,10 +283,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         return Z3Model(self.environment, self.z3.model())
 
     def _set_timeout(self, timeout):
-        if self.qf:
-            self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
-        else:
-            self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
+        self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
             
     @clear_pending_pop
     def _solve(self, assumptions=None):
@@ -912,9 +900,6 @@ class Z3Converter(Converter, DagWalker):
         sname = str(formula.constant_value())
         tp = formula.constant_type()
         sort_ast = self._type_to_z3(tp).ast
-        if sname not in self._z3EnumConsts:
-            print(sname)
-            print(self._z3EnumConsts)
         assert(sname in self._z3EnumConsts)
         z3term = self._z3EnumConsts[sname].ast
 #         self._z3EnumSorts[key] = (sort, value)
