@@ -258,7 +258,6 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         return res
 
     def get_term(self, formula):
-        return self.converter.convert(formula)
         if self.qf:
             return self.quantifier_free(formula)
         else:
