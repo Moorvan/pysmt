@@ -74,19 +74,23 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
             #    bound variables from the substitution map
             substitutions = kwargs["substitutions"]
             ssubstitutions = kwargs["ssubstitutions"]
+            simplemode = kwargs["simplemode"]
             new_subs = {}
-            for k,v in iteritems(substitutions):
-                # If at least one bound variable is in the cone of k,
-                # we do not consider this substitution in the body of
-                # the quantifier.
-                if all(m not in formula.quantifier_vars()
-                       for m in k.get_free_variables()):
-                    new_subs[k] = v
+            if simplemode:
+                new_subs = substitutions
+            else:
+                for k,v in iteritems(substitutions):
+                    # If at least one bound variable is in the cone of k,
+                    # we do not consider this substitution in the body of
+                    # the quantifier.
+                    if all(m not in formula.quantifier_vars()
+                           for m in k.get_free_variables()):
+                        new_subs[k] = v
 
             # 2. We apply the substitution on the quantifier body with
             #    the new 'reduced' map
             sub = self.__class__(self.env)
-            res_formula = sub.substitute(formula.arg(0), new_subs, ssubstitutions)
+            res_formula = sub.substitute_helper(formula.arg(0), new_subs, ssubstitutions, simplemode)
 
             # 3. We invoke the relevant function (walk_exists or
             #    walk_forall) to compute the substitution
@@ -101,7 +105,13 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
                                                                          formula,
                                                                          **kwargs)
 
+    def simple_substitute(self, formula, subs, ssubs=None):
+        return self.substitute_helper(formula, subs, ssubs, simple=True)
+        
     def substitute(self, formula, subs, ssubs=None):
+        return self.substitute_helper(formula, subs, ssubs, simple=False)
+        
+    def substitute_helper(self, formula, subs, ssubs=None, simple=False):
         """Replaces any subformula in formula with the definition in subs."""
 
         # Check that formula is a term
@@ -127,7 +137,7 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
                 raise PysmtTypeError(
                     "Value %d does not belong to the Formula Manager." % i)
 
-        res = self.walk(formula, substitutions=subs, ssubstitutions=ssubs)
+        res = self.walk(formula, substitutions=subs, ssubstitutions=ssubs, simplemode=simple)
         return res
 
 
