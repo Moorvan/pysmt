@@ -109,6 +109,11 @@ class PrettyPrinter(HRPrinter):
             if len(arg_ant) != 0 and len(arg_con) != 0:
                 argn = Implies(And(arg_ant), Or(arg_con))
                 return self.walk(argn)
+            elif len(arg_ant) != 0:
+                for i in range(1, len(arg_ant)):
+                    arg_con.append(Not(arg_ant[i]))
+                argn = Implies(arg_ant[0], Or(arg_con))
+                return self.walk(argn)
             else:
                 return HRPrinter.super(self, formula)
     
