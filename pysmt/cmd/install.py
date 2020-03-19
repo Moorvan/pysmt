@@ -38,7 +38,7 @@ INSTALLERS = [
     Installer(CVC4Installer,    "1.7-prerelease",
               {"git_version" : "391ab9df6c3fd9a3771864900c1718534c1e4666"}),
     Installer(Z3Installer,      "4.8.7",
-              {"git_version" : "30e7c225cd510400eacd41d0a83e013b835a8ece"}),
+              {}),
     Installer(YicesInstaller,   "2.6.0",
               {"yicespy_version": "f0768ffeec15ea310f830d10878971c9998454ac"}),
     Installer(BtorInstaller,    "3.0.1-pre",
