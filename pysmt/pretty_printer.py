@@ -41,7 +41,7 @@ class PrettyPrinter(HRPrinter):
     """
 
     def __init__(self, stream, subs=None):
-        HRPrinter.__init__(self, stream)
+        HRPrinter.__init__(self, stream, pretty=True)
         if subs is None:
             self.subs = {}
         else:

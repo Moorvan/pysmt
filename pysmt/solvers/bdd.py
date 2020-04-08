@@ -282,6 +282,7 @@ class BddConverter(Converter, DagWalker):
         self.other_vars = []
         self.pnset = False
         self.prt = False
+        self.zero = None
     
     def _get_children(self, formula):
         # Deal with quantifiers
@@ -396,6 +397,12 @@ class BddConverter(Converter, DagWalker):
                 return self.ddmanager.One()
             else:
                 return self.ddmanager.Zero()
+        if self.zero != None and str(lhs).startswith("zero"):
+            if rhs == self.zero:
+                return self.ddmanager.One()
+            else:
+                return self.ddmanager.Zero()
+            
         if lhs.is_ite():
             f, g, h = lhs.args()
             bddf = self.walk(f)

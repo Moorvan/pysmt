@@ -23,17 +23,17 @@ from pysmt.walkers.generic import handles
 from pysmt.utils import quote
 from pysmt.constants import is_pysmt_fraction, is_pysmt_integer
 
-
 class HRPrinter(TreeWalker):
     """Performs serialization of a formula in a human-readable way.
 
     E.g., Implies(And(Symbol(x), Symbol(y)), Symbol(z))  ~>   '(x * y) -> z'
     """
 
-    def __init__(self, stream, env=None):
+    def __init__(self, stream, env=None, pretty=False):
         TreeWalker.__init__(self, env=env)
         self.stream = stream
         self.write = self.stream.write
+        self.pretty = pretty
 
     def printer(self, f, threshold=None):
         """Performs the serialization of 'f'.
@@ -77,8 +77,25 @@ class HRPrinter(TreeWalker):
 #         self.write(")")
 
     def walk_symbol(self, formula):
-#         self.write(quote(formula.symbol_name(), style="'"))
-        self.write(formula.symbol_name())
+        if self.pretty:
+            name = formula.symbol_name()
+            if formula.symbol_type().is_function_type():
+                    prefix = name.rstrip('1234567890')
+                    if prefix.endswith(":e"):
+                        name = prefix[:-2]
+            else:
+                if name.startswith("Q:"):
+                    prefix = name.rstrip('1234567890')
+                    suffix = name[len(prefix):]
+                    if prefix.endswith(":"):
+                        prefix = str(formula.symbol_type())
+                        prefix = prefix[0:prefix.find(":")]
+                        prefix = prefix[0]
+                        name = prefix.upper() + suffix
+            self.write(name)
+        else:
+#             self.write(quote(formula.symbol_name(), style="'"))
+            self.write(formula.symbol_name())
 
     def walk_function(self, formula):
         yield formula.function_name()
@@ -122,7 +139,13 @@ class HRPrinter(TreeWalker):
         self.write(str(formula.constant_value()))
 
     def walk_enum_constant(self, formula):
-        self.write("`%s`" % formula.constant_value())
+        if self.pretty:
+            name = formula.constant_value()
+            prefix = name.rstrip('1234567890')
+            suffix = name[len(prefix):]
+            self.write("%s%s" % (prefix[0], suffix))
+        else:
+            self.write("`%s`" % formula.constant_value())
 
     def walk_bv_extract(self, formula):
         yield formula.arg(0)
