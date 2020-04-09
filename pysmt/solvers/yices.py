@@ -29,7 +29,7 @@ except ImportError:
 
 
 from pysmt.solvers.eager import EagerModel
-from pysmt.solvers.solver import Solver, Converter, SolverOptions
+from pysmt.solvers.solver import UnsatCoreSolver, Solver, Converter, SolverOptions
 from pysmt.solvers.smtlib import SmtLibBasicSolver, SmtLibIgnoreMixin
 
 from pysmt.walkers import DagWalker
@@ -40,7 +40,7 @@ from pysmt.decorators import clear_pending_pop, catch_conversion_error
 from pysmt.constants import Fraction, is_pysmt_integer
 
 import pysmt.logics
-
+from pysmt.shortcuts import QuantifierEliminator
 
 # Initialization
 def init():
@@ -75,8 +75,8 @@ class YicesOptions(SolverOptions):
         SolverOptions.__init__(self, **base_options)
         # TODO: Yices Supports UnsatCore extraction
         # but we did not wrapped it yet.
-        if self.unsat_cores_mode is not None:
-            raise PysmtValueError("'unsat_cores_mode' option not supported.")
+#         if self.unsat_cores_mode is not None:
+#             raise PysmtValueError("'unsat_cores_mode' option not supported.")
 
     @staticmethod
     def _set_option(cfg, name, value):
@@ -127,8 +127,7 @@ class YicesOptions(SolverOptions):
 
 # EOC YicesOptions
 
-
-class YicesSolver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
+class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
 
     LOGICS = pysmt.logics.PYSMT_QF_LOGICS -\
              pysmt.logics.ARRAYS_LOGICS -\
@@ -155,7 +154,32 @@ class YicesSolver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
         self.mgr = environment.formula_manager
         self.model = None
         self.failed_pushes = 0
+        
+        self.qelim = QuantifierEliminator(name="z3")
+        self.qf = False
+        self.cache_qf = {}
         return
+
+    def enable_qf(self):
+        self.qf = True
+    
+    def quantifier_free(self, formula):
+        assert(self.qf)
+        if formula in self.cache_qf:
+            return self.cache_qf[formula]
+        formulaqf = self.qelim.eliminate_quantifiers(formula).simplify()
+        res = self.converter.convert(formulaqf)
+        self.cache_qf[formula] = formulaqf
+#         print("q : %s" % term.serialize())
+#         print("qf: %s" % res.serialize())
+#         assert(0)
+        return res
+
+    def get_term(self, formula):
+        if self.qf:
+            return self.quantifier_free(formula)
+        else:
+            return self.converter.convert(formula)
 
     @clear_pending_pop
     def reset_assertions(self):
@@ -168,7 +192,7 @@ class YicesSolver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
     @clear_pending_pop
     def add_assertion(self, formula, named=None):
         self._assert_is_boolean(formula)
-        term = self.converter.convert(formula)
+        term = self.get_term(formula)
         code = yicespy.yices_assert_formula(self.yices, term)
         if code != 0:
             msg = yicespy.yices_error_string()
@@ -194,6 +218,9 @@ class YicesSolver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
                 assignment[s] = v
         return EagerModel(assignment=assignment, environment=self.environment)
 
+    def set_timeout(self, timeout):
+        pass
+            
     @clear_pending_pop
     def solve(self, assumptions=None):
         if assumptions is not None:
@@ -260,7 +287,7 @@ class YicesSolver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
     def get_value(self, item):
         self._assert_no_function_type(item)
 
-        titem = self.converter.convert(item)
+        titem = self.get_term(item)
         ty = self.environment.stc.get_type(item)
         if ty.is_bool_type():
             status, res = yicespy.yices_get_bool_value(self.model, titem)
@@ -301,6 +328,8 @@ class YicesConverter(Converter, DagWalker):
         # Maps an internal yices instance into the corresponding symbol
         self.decl_to_symbol = {}
         self._yicesSort = {}
+        self._yicesEnumSort = {}
+        self._yicesEnumConsts = {}
 
     @catch_conversion_error
     def convert(self, formula):
@@ -461,14 +490,24 @@ class YicesConverter(Converter, DagWalker):
     def walk_bv_constant(self, formula, **kwargs):
         width = formula.bv_width()
         res = None
-        if width <= 64:
-            # we can use the numberical representation
-            value = formula.constant_value()
+        value = formula.constant_value()
+        if value <= ((2**63) - 1):
+            # we can use the numerical representation
+            # Note: yicespy uses *signed* longs in the API, so the maximal
+            # representable number is 2^63 - 1
             res = yicespy.yices_bvconst_uint64(width, value)
         else:
             # we must resort to strings to communicate the result to yices
             res = yicespy.yices_parse_bvbin(formula.bv_bin_str())
         self._check_term_result(res)
+        return res
+
+    def walk_enum_constant(self, formula, **kwargs):
+        sname = str(formula.constant_value())
+        tp = formula.constant_type()
+        sort_ast = self._type_to_yices(tp)
+        assert(sname in self._yicesEnumConsts)
+        res = self._yicesEnumConsts[sname]
         return res
 
     def walk_bv_ult(self, formula, args, **kwargs):
@@ -618,6 +657,22 @@ class YicesConverter(Converter, DagWalker):
             self._yicesSort[name] = sort
         return sort
 
+    def yicesEnumSort(self, name, value):
+        """Return the yices EnumSort for the given name."""
+        key = str(name)
+        try:
+            return self._yicesEnumSort[key][0]
+        except KeyError:
+            sort = yicespy.yices_new_scalar_type(len(value))
+            sortvalues = []
+            for i in range(len(value)):
+                lhs = str(value[i])
+                rhs = yicespy.yices_constant(sort, i)
+                sortvalues.append(rhs)
+                self._yicesEnumConsts[lhs] = rhs
+            self._yicesEnumSort[key] = (sort, sortvalues)
+        return sort
+
     def _type_to_yices(self, tp):
         if tp.is_bool_type():
             return yicespy.yices_bool_type()
@@ -634,6 +689,8 @@ class YicesConverter(Converter, DagWalker):
                                               rtp)
         elif tp.is_bv_type():
             return yicespy.yices_bv_type(tp.width)
+        elif tp.is_enum_type():
+            return self.yicesEnumSort(tp.name, tp.domain)
         elif tp.is_custom_type():
             return self.yicesSort(str(tp))
         else:

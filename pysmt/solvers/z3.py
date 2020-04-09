@@ -1112,34 +1112,25 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         self.logic = logic
         self.converter = Z3Converter(environment, z3.main_ctx())
         self._cache = {}
+        self._cache_term = {}
 
     def eliminate_quantifiers(self, formula):
         if formula in self._cache:
             return self._cache[formula]
         
-#         logic = get_logic(formula, self.environment)
-#         if not logic <= LRA and not logic <= LIA:
-#             raise PysmtValueError("Z3 quantifier elimination only "\
-#                                   "supports LRA or LIA without combination."\
-#                                   "(detected logic is: %s)" % str(logic))
-
-#         print("pre: ")
-#         for f in formula.get_free_variables():
-#             print(f, f.symbol_type(), type(f))
-#         for f in f.get_enum_constants():
-#             print("enum: ", f, type(f))
+        term = self.converter.convert(formula)
+        if term in self._cache_term:
+            return self._cache_term[term]
         simplifier = z3.Tactic('simplify')
-        propagater = z3.Tactic('propagate-values')
         eliminator = z3.Tactic('qe')
-
-        f = self.converter.convert(formula)
-        s = simplifier(f, elim_and=True,
-                       pull_cheap_ite=True,
-                       ite_extra_rules=True).as_expr()
-        p = propagater(s).as_expr()
-#         res = eliminator(f).as_expr()
-#         res = eliminator(s).as_expr()
-        res = eliminator(p).as_expr()
+        res = term
+        res = simplifier(res,   elim_and=True,
+                                pull_cheap_ite=True,
+                                ite_extra_rules=True
+                        ).as_expr()
+        res = eliminator(res).as_expr()
+        self._cache_term[term] = res
+        
         pysmt_res = None
         try:
             pysmt_res = self.converter.back(res)
