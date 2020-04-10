@@ -76,10 +76,11 @@ def askey(n):
 
 class Z3Model(Model):
 
-    def __init__(self, environment, z3_model):
+    def __init__(self, environment, z3_model, converter, qf):
         Model.__init__(self, environment)
         self.z3_model = z3_model
-        self.converter = Z3Converter(environment, z3_model.ctx)
+        self.converter = converter
+        self.qf = qf
 
     def print_model(self):    
         print(self.z3_model.sexpr())
@@ -140,8 +141,11 @@ class Z3Model(Model):
                 print("else: %s" % value_else)                
         return consts, funcs
 
+    def get_term(self, formula):
+        return self.converter.get_term(formula, self.qf)
+        
     def get_value(self, formula, model_completion=True):
-        titem = self.converter.convert(formula)
+        titem = self.get_term(formula)
         z3_res = self.z3_model.eval(titem, model_completion=model_completion)
         return self.converter.back(z3_res, model=self.z3_model)
 
@@ -224,35 +228,13 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         self._name_cnt = 0
         
         self.qf = False
-        self.cache_qf = {}
         return
 
     def enable_qf(self):
         self.qf = True
-    
-    def quantifier_free(self, formula):
-        assert(self.qf)
-        term = self.converter.convert(formula)
-#         return term
-        if term in self.cache_qf:
-            return self.cache_qf[term]
-        simplifier = z3.Tactic('simplify')
-        eliminator = z3.Tactic('qe')
-        res = term
-        res = simplifier(res,   elim_and=True,
-                                pull_cheap_ite=True,
-                                ite_extra_rules=True
-                        ).as_expr()
-        res = eliminator(res).as_expr()
-#         print(term, " -> ", res)
-        self.cache_qf[term] = res
-        return res
 
     def get_term(self, formula):
-        if self.qf:
-            return self.quantifier_free(formula)
-        else:
-            return self.converter.convert(formula)
+        return self.converter.get_term(formula, self.qf)
         
     @clear_pending_pop
     def _reset_assertions(self):
@@ -280,7 +262,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
             return formula
 
     def get_model(self):
-        return Z3Model(self.environment, self.z3.model())
+        return Z3Model(self.environment, self.z3.model(), self.converter, self.qf)
 
     def _set_timeout(self, timeout):
         self.z3.set("timeout", timeout if timeout > 0 else 4294967295)
@@ -399,6 +381,7 @@ class Z3Converter(Converter, DagWalker):
         self._get_type = environment.stc.get_type
         self._back_memoization = {}
         self.ctx = z3_ctx
+        self.cache_qf = {}
 
         # Back Conversion
         self._back_fun = {
@@ -588,6 +571,29 @@ class Z3Converter(Converter, DagWalker):
             else:
                 raise NotImplementedError(formula)
 
+    def quantifier_free(self, formula):
+        term = self.convert(formula)
+#         return term
+        if term in self.cache_qf:
+            return self.cache_qf[term]
+        simplifier = z3.Tactic('simplify')
+        eliminator = z3.Tactic('qe')
+        res = term
+        res = simplifier(res,   elim_and=True,
+                                pull_cheap_ite=True,
+                                ite_extra_rules=True
+                        ).as_expr()
+        res = eliminator(res).as_expr()
+#         print(term, " -> ", res)
+        self.cache_qf[term] = res
+        return res
+
+    def get_term(self, formula, qf):
+        if qf:
+            return self.quantifier_free(formula)
+        else:
+            return self.convert(formula)
+        
     @catch_conversion_error
     def convert(self, formula):
         z3term = self.walk(formula)
@@ -1118,19 +1124,7 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         if formula in self._cache:
             return self._cache[formula]
         
-        term = self.converter.convert(formula)
-        if term in self._cache_term:
-            return self._cache_term[term]
-        simplifier = z3.Tactic('simplify')
-        eliminator = z3.Tactic('qe')
-        res = term
-        res = simplifier(res,   elim_and=True,
-                                pull_cheap_ite=True,
-                                ite_extra_rules=True
-                        ).as_expr()
-        res = eliminator(res).as_expr()
-        self._cache_term[term] = res
-        
+        res = self.converter.get_term(formula, True)
         pysmt_res = None
         try:
             pysmt_res = self.converter.back(res)
