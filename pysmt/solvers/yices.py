@@ -20,7 +20,12 @@ from warnings import warn
 
 from six.moves import xrange
 
-from pysmt.exceptions import SolverAPINotFound
+from pysmt.exceptions import (SolverAPINotFound,
+                              SolverReturnedUnknownResultError,
+                              SolverNotConfiguredForUnsatCoresError,
+                              SolverStatusError,
+                              ConvertExpressionError,
+                              UndefinedSymbolError, PysmtValueError)
 
 try:
     import yicespy
@@ -29,7 +34,8 @@ except ImportError:
 
 
 from pysmt.solvers.eager import EagerModel
-from pysmt.solvers.solver import UnsatCoreSolver, Model, Solver, Converter, SolverOptions
+from pysmt.solvers.solver import (Solver, IncrementalTrackingSolver, UnsatCoreSolver,
+                                  Model, Converter, SolverOptions)
 from pysmt.solvers.smtlib import SmtLibBasicSolver, SmtLibIgnoreMixin
 
 from pysmt.walkers import DagWalker
@@ -212,7 +218,8 @@ class YicesOptions(SolverOptions):
 
 # EOC YicesOptions
 
-class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
+class YicesSolver(IncrementalTrackingSolver, UnsatCoreSolver, 
+                  SmtLibBasicSolver, SmtLibIgnoreMixin):
 
     LOGICS = pysmt.logics.PYSMT_QF_LOGICS -\
              pysmt.logics.ARRAYS_LOGICS -\
@@ -221,10 +228,10 @@ class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin)
     OptionsClass = YicesOptions
 
     def __init__(self, environment, logic, **options):
-        Solver.__init__(self,
-                        environment=environment,
-                        logic=logic,
-                        **options)
+        IncrementalTrackingSolver.__init__(self,
+                                           environment=environment,
+                                           logic=logic,
+                                           **options)
 
         self.declarations = set()
         self.yices_config = yicespy.yices_new_config()
@@ -240,6 +247,8 @@ class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin)
         self.model = None
         self.failed_pushes = 0
         
+        self.yices_assumptions = []
+        self.unsat_core = None
         self.qf = False
         return
 
@@ -250,25 +259,45 @@ class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin)
         return self.converter.get_term(formula, self.qf)
 
     @clear_pending_pop
-    def reset_assertions(self):
+    def _reset_assertions(self):
         yicespy.yices_reset_context(self.yices)
+        self.yices_assumptions = []
 
     @clear_pending_pop
     def declare_variable(self, var):
         raise NotImplementedError
 
     @clear_pending_pop
-    def add_assertion(self, formula, named=None):
+    def _add_assertion(self, formula, named=None):
         self._assert_is_boolean(formula)
         term = self.get_term(formula)
-        code = yicespy.yices_assert_formula(self.yices, term)
-        if code != 0:
-            msg = yicespy.yices_error_string()
-            if code == -1 and "non-linear arithmetic" in msg:
-                raise NonLinearError(formula)
-            raise InternalSolverError("Yices returned non-zero code upon assert"\
-                                      ": %s (code: %s)" % \
-                                      (msg, code))
+
+        if (named is not None) and (self.options.unsat_cores_mode is not None):
+            # TODO: IF unsat_cores_mode is all, then we add this fresh variable.
+            # Otherwise, we should track this only if it is named.
+            key = self.mgr.FreshSymbol(template="_assertion_%d")
+            tkey = self.get_term(key)
+            key2term = yicespy.yices_implies(tkey, term)
+            self.yices_assumptions.append(tkey)
+            code = yicespy.yices_assert_formula(self.yices, key2term)
+            if code != 0:
+                msg = yicespy.yices_error_string()
+                if code == -1 and "non-linear arithmetic" in msg:
+                    raise NonLinearError(formula)
+                raise InternalSolverError("Yices returned non-zero code upon assert"\
+                                          ": %s (code: %s)" % \
+                                          (msg, code))
+            return (key, named, formula)
+        else:
+            code = yicespy.yices_assert_formula(self.yices, term)
+            if code != 0:
+                msg = yicespy.yices_error_string()
+                if code == -1 and "non-linear arithmetic" in msg:
+                    raise NonLinearError(formula)
+                raise InternalSolverError("Yices returned non-zero code upon assert"\
+                                          ": %s (code: %s)" % \
+                                          (msg, code))
+            return formula
 
     def get_model(self):
         return YicesModel(self.environment, self.model, self.converter, self.qf)
@@ -277,33 +306,99 @@ class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin)
         pass
             
     @clear_pending_pop
-    def solve(self, assumptions=None):
+    def _solve(self, assumptions=None):
         if assumptions is not None:
-            self.push()
-            self.add_assertion(self.mgr.And(assumptions))
-            self.pending_pop = True
+            bool_ass = []
+            other_ass = []
+            for x in assumptions:
+                if x.is_literal():
+                    self.yices_assumptions.append(self.get_term(x))
+                else:
+                    other_ass.append(x)
 
-        out = yicespy.yices_check_context(self.yices, self.yices_params)
-
+            if len(other_ass) > 0:
+                self.push()
+                self.add_assertion(self.mgr.And(other_ass))
+                self.pending_pop = True
+        
+        if len(self.yices_assumptions) == 0:
+            out = yicespy.yices_check_context(self.yices, self.yices_params)
+        else:
+            out = yicespy.yices_check_context_with_assumptions(self.yices, self.yices_params, 
+                                                               len(self.yices_assumptions), 
+                                                               self.yices_assumptions)
+            
         if self.model is not None:
             yicespy.yices_free_model(self.model)
             self.model = None
 
+        sres = 'unknown'
         assert out in [STATUS_SAT, STATUS_UNSAT, STATUS_UNKNOWN]
         if out == STATUS_UNKNOWN:
             raise SolverReturnedUnknownResultError()
         elif out == STATUS_SAT:
+            sres = 'sat'
             self.model = yicespy.yices_get_model(self.yices, 1)
-            return True
         else:
-            return False
+            sres = 'unsat'
+        return (sres == 'sat')
+
+    def get_unsat_core(self):
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        set of formulae"""
+        return self.get_named_unsat_core().values()
+
+    def _named_assertions_map(self):
+        if self.options.unsat_cores_mode is not None:
+            return dict((t[0], (t[1],t[2])) for t in self.named_assertions)
+        return None
+
+    def get_named_unsat_core(self):
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        dict of names to formulae"""
+        if self.options.unsat_cores_mode is None:
+            raise SolverNotConfiguredForUnsatCoresError
+
+        if self.last_result is not False:
+            raise SolverStatusError("The last call to solve() was not" \
+                                    " unsatisfiable")
+
+        if self.last_command != "solve":
+            raise SolverStatusError("The solver status has been modified by a" \
+                                    " '%s' command after the last call to" \
+                                    " solve()" % self.last_command)
+        
+        assumptions = yicespy.term_vector_t()
+        yicespy.yices_get_unsat_core(self.yices, assumptions)
+        print(assumptions)
+        print(assumptions.size)
+        print(assumptions.data)
+        for d in assumptions:
+            print(d)
+            assert(0)
+        for i in range(assumptions.size):
+            d = assumptions.data[i]
+            print(d)
+        pysmt_assumptions = set(self.converter.back(assumptions.data[i]) for i in range(assumptions.size))
+
+        res = {}
+        n_ass_map = self._named_assertions_map()
+        cnt = 0
+        for key in pysmt_assumptions:
+            if key in n_ass_map:
+                (name, formula) = n_ass_map[key]
+                if name is None:
+                    name = "_a_%d" % cnt
+                    cnt += 1
+                res[name] = formula
+        return res
 
     @clear_pending_pop
     def all_sat(self, important, callback):
         raise NotImplementedError
 
     @clear_pending_pop
-    def push(self, levels=1):
+    def _push(self, levels=1):
         for _ in xrange(levels):
             c = yicespy.yices_push(self.yices)
             if c != 0:
@@ -319,7 +414,7 @@ class YicesSolver(UnsatCoreSolver, Solver, SmtLibBasicSolver, SmtLibIgnoreMixin)
                                               yicespy.yices_error_string())
 
     @clear_pending_pop
-    def pop(self, levels=1):
+    def _pop(self, levels=1):
         for _ in xrange(levels):
             if self.failed_pushes > 0:
                 self.failed_pushes -= 1
