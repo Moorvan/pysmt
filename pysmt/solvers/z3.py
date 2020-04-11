@@ -242,6 +242,10 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         self.options(self)
 
     @clear_pending_pop
+    def _reset_named_assertions(self):
+        pass
+
+    @clear_pending_pop
     def declare_variable(self, var):
         raise NotImplementedError
 
@@ -1121,6 +1125,8 @@ class Z3QuantifierEliminator(QuantifierEliminator):
         self._cache_term = {}
 
     def eliminate_quantifiers(self, formula):
+        if not formula.has_quantifier_variables():
+            return formula
         if formula in self._cache:
             return self._cache[formula]
         

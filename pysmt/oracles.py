@@ -379,6 +379,19 @@ class QuantifierVarsOracle(walkers.DagWalker):
     # - Constants have no impact
     # - Symbols have no impact
 
+    def __init__(self, env=None):
+        walkers.DagWalker.__init__(self, env=env)
+        self.is_quantified = {}
+
+    def has_quantifier_variables(self, formula):
+        """Returns whether the formula has quantifiers or not."""
+        if formula in self.is_quantified:
+            return self.is_quantified[formula]
+        qvars = self.get_quantifier_variables(formula)
+        res = len(qvars) != 0
+        self.is_quantified[formula] = res
+        return res
+
     def get_quantifier_variables(self, formula):
         """Returns the set of Symbols appearing free in the formula."""
         return self.walk(formula)

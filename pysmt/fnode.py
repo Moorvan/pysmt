@@ -119,6 +119,10 @@ class FNode(object):
         """Return the set of Symbols that are free in the formula."""
         return _env().fvo.get_free_variables(self)
 
+    def has_quantifier_variables(self):
+        """Returns whether the formula has quantifiers or not."""
+        return _env().qvo.has_quantifier_variables(self)
+
     def get_quantifier_variables(self):
         """Return the set of Symbols that are quantified in the formula."""
         return _env().qvo.get_quantifier_variables(self)

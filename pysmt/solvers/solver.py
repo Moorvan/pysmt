@@ -432,7 +432,11 @@ class IncrementalTrackingSolver(Solver):
             self._assertion_stack = self._assertion_stack[0:point]
         self._last_command = "pop"
     
+    def _reset_named_assertions(self):
+        raise NotImplementedError
+
     def reset_named_assertions(self):
+        self._reset_named_assertions()
         self._named_assertions = []
 
 
