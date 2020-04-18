@@ -99,7 +99,8 @@ class FNode(object):
     # different environments they can have the same id. This is not an
     # issue since, by default, equality coincides with identity.
     def __hash__(self):
-        return self._node_id
+        return hash(self._content)
+#         return self._node_id
 
     def node_id(self):
         return self._node_id

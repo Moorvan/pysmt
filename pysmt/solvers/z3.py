@@ -293,6 +293,7 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
         sres = str(res)
         assert sres in ['unknown', 'sat', 'unsat']
         if sres == 'unknown':
+            print(self.z3.reason_unknown())
             raise SolverReturnedUnknownResultError
         return (sres == 'sat')
 
