@@ -19,6 +19,17 @@ import re
 import itertools
 
 
+def all_scalar_assignments(bool_variables, env):
+    """Generates all possible assignments for a set of boolean variables."""
+    mgr = env.formula_manager
+    enums = []
+    for v in bool_variables:
+        dom = v.symbol_type().domain
+        enums.append(dom)
+    for set_ in itertools.product(*enums):
+        yield dict((v, mgr.Enum(set_[idx], v.symbol_type())) for idx, v in enumerate(bool_variables))
+
+
 def all_assignments(bool_variables, env):
     """Generates all possible assignments for a set of boolean variables."""
     mgr = env.formula_manager

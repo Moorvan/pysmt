@@ -18,7 +18,7 @@
 import pysmt.logics
 
 from pysmt.walkers.identitydag import IdentityDagWalker
-from pysmt.utils import all_assignments
+from pysmt.utils import all_scalar_assignments, all_assignments
 from pysmt.exceptions import InternalSolverError
 
 
@@ -60,6 +60,49 @@ class QuantifierEliminator(object):
     def _exit(self):
         """Destroys the solver and closes associated resources."""
         raise NotImplementedError
+
+
+class ScalarShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker):
+    """Quantifier Elimination over scalar domain using Shannon Expansion."""
+
+    LOGICS = [pysmt.logics.UF]
+
+    def __init__(self, environment, logic=None):
+        IdentityDagWalker.__init__(self, env=environment)
+        QuantifierEliminator.__init__(self)
+        self.logic = logic
+
+    def eliminate_quantifiers(self, formula):
+        return self.walk(formula)
+
+    def _assert_vars_scalar(self, var_set):
+        for v in var_set:
+            if not v.symbol_type().is_enum_type():
+                raise InternalSolverError(
+                    "Scalar Shannon Quantifier Elimination only supports "\
+                    "quantification over Enum variables: "\
+                    "(%s is %s)" % (v, v.symbol_type()))
+
+    def _expand(self, formula, args):
+        """Returns the list of elements from the Shannon expansion."""
+        qvars = formula.quantifier_vars()
+        self._assert_vars_scalar(qvars)
+        res = []
+        f = args[0]
+        for subs in all_scalar_assignments(qvars, self.env):
+            res.append(f.substitute(subs))
+        return res
+
+    def walk_forall(self, formula, args, **kwargs):
+        return self.mgr.And(self._expand(formula, args))
+
+    def walk_exists(self, formula, args, **kwargs):
+        return self.mgr.Or(self._expand(formula, args))
+
+    def _exit(self):
+        pass
+
+# EOC ShannonQuantifierEliminator
 
 
 class ShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker):
