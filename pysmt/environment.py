@@ -53,6 +53,7 @@ class Environment(object):
     FreeVarsOracleClass= pysmt.oracles.FreeVarsOracle
     QuantifierVarsOracleClass= pysmt.oracles.QuantifierVarsOracle
     EnumConstsOracleClass= pysmt.oracles.EnumConstsOracle
+    FilterNodeOracleClass= pysmt.oracles.FilterNodeOracle
     SizeOracleClass = pysmt.oracles.SizeOracle
     AtomsOracleClass = pysmt.oracles.AtomsOracle
     TypesOracleClass = pysmt.oracles.TypesOracle
@@ -71,6 +72,7 @@ class Environment(object):
         self._fvo = self.FreeVarsOracleClass(self)
         self._qvo = self.QuantifierVarsOracleClass(self)
         self._eco = self.EnumConstsOracleClass(self)
+        self._fno = self.FilterNodeOracleClass(self)
         self._sizeo = self.SizeOracleClass(self)
         self._ao = self.AtomsOracleClass(self)
         self._typeso = self.TypesOracleClass(self)
@@ -148,6 +150,11 @@ class Environment(object):
     def eco(self):
         """ Get the EnumConsts Oracle """
         return self._eco
+
+    @property
+    def fno(self):
+        """ Get the FilterNode Oracle """
+        return self._fno
 
     @property
     def sizeo(self):

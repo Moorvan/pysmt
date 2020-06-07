@@ -473,6 +473,30 @@ class EnumConstsOracle(walkers.DagWalker):
 # EOC FreeVarsOracle
 
 
+class FilterNodeOracle(walkers.DagWalker):
+
+    def __init__(self, env=None):
+        walkers.DagWalker.__init__(self, env=env, invalidate_memoization=True)
+        self.node_set = set()
+
+    def get_filtered_nodes(self, formula, node_set):
+        """Returns the set of nodes in node_set appearing in the formula."""
+        self.node_set = node_set
+        return self.walk(formula)
+
+    @walkers.handles(set(op.ALL_TYPES))
+    def walk_args(self, formula, args, **kwargs):
+        #pylint: disable=unused-argument
+        res = set()
+        if formula in self.node_set:
+            res.add(formula)
+        for arg in args:
+            res.update(arg)
+        return frozenset(res)
+
+# EOC FilterNodeOracle
+
+
 class AtomsOracle(walkers.DagWalker):
     """This class returns the set of Boolean atoms involved in a formula
     A boolean atom is either a boolean variable or a theory atom

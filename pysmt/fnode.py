@@ -132,6 +132,10 @@ class FNode(object):
         """Return the set of Symbols that are enum constants in the formula."""
         return _env().eco.get_enum_constants(self)
 
+    def get_filtered_nodes(self, node_set):
+        """Return the set of nodes in node_set that are in the formula."""
+        return _env().fno.get_filtered_nodes(self, node_set)
+
     def get_atoms(self):
         """Return the set of atoms appearing in the formula."""
         return _env().ao.get_atoms(self)

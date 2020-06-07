@@ -84,14 +84,17 @@ class HRPrinter(TreeWalker):
                     if prefix.endswith(":e"):
                         name = prefix[:-2]
             else:
-                if name.startswith("Q:"):
-                    prefix = name.rstrip('1234567890')
-                    suffix = name[len(prefix):]
-                    if prefix.endswith(":"):
-                        prefix = str(formula.symbol_type())
-                        prefix = prefix[0:prefix.find(":")]
-                        prefix = prefix[0]
-                        name = prefix.upper() + suffix
+                ft = formula.symbol_type()
+                if ft.is_enum_type():
+                    if formula not in ft.domain:
+                        prefix = name.rstrip('1234567890')
+                        suffix = name[len(prefix):]
+                        if prefix.endswith(":e"):
+                            name = name[0:prefix.find(":")]
+                        elif name.startswith("Q:") and prefix.endswith(":"):
+                            prefix = str(ft)
+                            prefix = prefix[0]
+                            name = prefix.upper() + suffix
             self.write(name)
         else:
 #             self.write(quote(formula.symbol_name(), style="'"))
