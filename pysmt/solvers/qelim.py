@@ -18,9 +18,13 @@
 import pysmt.logics
 
 from pysmt.walkers.identitydag import IdentityDagWalker
-from pysmt.utils import all_scalar_assignments, all_assignments
+from pysmt.utils import all_assignments
 from pysmt.exceptions import InternalSolverError
 
+import pysmt.walkers
+from pysmt.walkers.generic import handles
+import pysmt.operators as op
+import itertools
 
 class QuantifierEliminator(object):
 
@@ -62,6 +66,91 @@ class QuantifierEliminator(object):
         raise NotImplementedError
 
 
+# class ScalarQuantifierEliminator(QuantifierEliminator, IdentityDagWalker):
+#     """Quantifier Elimination over scalar domain."""
+#     # We have the following categories for this walker.
+#     #
+#     # - Constants
+#     # - Symbols
+#     # - Quantifiers
+#     # - Anything else
+#     #
+# 
+#     LOGICS = [pysmt.logics.UF]
+# 
+#     def __init__(self, environment, logic=None):
+#         IdentityDagWalker.__init__(self, env=environment)
+#         QuantifierEliminator.__init__(self)
+#         self.logic = logic
+#         self.mgr = self.env.formula_manager
+# 
+#     def eliminate_quantifiers(self, formula):
+#         res = self.walk(formula)
+#         return res[0]
+# 
+#     @handles(set(op.ALL_TYPES) - op.QUANTIFIERS - op.SYMBOLS - op.CONSTANTS - frozenset([op.FUNCTION]))
+#     def walk_op(self, formula, args, **kwargs):
+#         res = []
+# #         print("formula: %s" % formula)
+# #         print("args: %s" % args)
+# #         for set_ in itertools.product(*args):
+# #             new_args = [set_[idx] for idx in range(len(args))]
+# #             print("new_args: %s" % new_args)
+#         for set_ in itertools.product(*args):
+#             new_args = [set_[idx] for idx in range(len(args))]
+#             inst = pysmt.walkers.IdentityDagWalker.super(self, formula, args=new_args, **kwargs)
+#             res.append(inst)
+# #             print("inst: %s" % inst)
+#         return res
+# 
+#     @handles(op.CONSTANTS)
+#     def walk_constant(self, formula, **kwargs):
+#         return [formula]
+# 
+#     def walk_symbol(self, formula, args, **kwargs):
+#         ft = formula.symbol_type()
+#         res = []
+#         if ft.is_enum_type():
+#             for d in ft.domain:
+#                 res.append(self.mgr.Enum(d, ft))
+#         else:
+#             res.append(formula)
+#         return res
+# 
+#     def walk_function(self, formula, args, **kwargs):
+#         name = formula.function_name()
+#         res = []
+# #         print("formula: %s" % formula)
+# #         for set_ in itertools.product(*args):
+# #             new_args = [set_[idx] for idx in range(len(args))]
+# #             print("new_args: %s" % new_args)
+#         for set_ in itertools.product(*args):
+#             new_args = [set_[idx] for idx in range(len(args))]
+#             inst = self.mgr.Function(name, new_args)
+#             res.append(inst)
+# #             print("inst: %s" % inst)
+#         return res
+#     
+#     def walk_forall(self, formula, args, **kwargs):
+#         print("QE: %s" % formula)
+#         for inst in args[0]:
+#             print("--- %s" % inst)
+#         res = [self.mgr.And(args[0])]
+#         return res
+# 
+#     def walk_exists(self, formula, args, **kwargs):
+#         print("QE: %s" % formula)
+#         for inst in args[0]:
+#             print("--- %s" % inst)
+#         res = [self.mgr.Or(args[0])]
+#         return res
+# 
+#     def _exit(self):
+#         pass
+# 
+# # EOC ShannonQuantifierEliminator
+
+
 class ScalarShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker):
     """Quantifier Elimination over scalar domain using Shannon Expansion."""
 
@@ -71,26 +160,62 @@ class ScalarShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker)
         IdentityDagWalker.__init__(self, env=environment)
         QuantifierEliminator.__init__(self)
         self.logic = logic
+        self.mgr = self.env.formula_manager
+        self.enum_domain = {}
+        self.instances_cache = {}
 
     def eliminate_quantifiers(self, formula):
         return self.walk(formula)
 
-    def _assert_vars_scalar(self, var_set):
-        for v in var_set:
-            if not v.symbol_type().is_enum_type():
-                raise InternalSolverError(
-                    "Scalar Shannon Quantifier Elimination only supports "\
-                    "quantification over Enum variables: "\
-                    "(%s is %s)" % (v, v.symbol_type()))
+    def _assert_var_scalar(self, v):
+        if not v.symbol_type().is_enum_type():
+            raise InternalSolverError(
+                "Scalar Shannon Quantifier Elimination only supports "\
+                "quantification over Enum variables: "\
+                "(%s is %s)" % (v, v.symbol_type()))
+
+    def _scalar_domain(self, v):
+        if v in self.enum_domain:
+            return self.enum_domain[v]
+
+        self._assert_var_scalar(v)
+        vt = v.symbol_type()
+        econsts = [self.mgr.Enum(d, vt) for d in vt.domain]
+        self.enum_domain[v] = econsts
+        return econsts
+
+    def _scalar_instances(self, variables):
+        vstr = str(variables)
+        if vstr in self.instances_cache:
+            return self.instances_cache[vstr]
+
+        enums = []
+        for v in variables:
+            enums.append(self._scalar_domain(v))
+            
+        instances = []
+        for set_ in itertools.product(*enums):
+            d = dict((v, set_[idx]) for idx, v in enumerate(variables))
+            instances.append(d)
+#         instances = list(itertools.product(*enums))
+
+        self.instances_cache[vstr] = instances
+        return instances
+
+    def _all_scalar_assignments(self, variables_orig):
+        """Generates all possible assignments for a set of variables."""
+        variables = set(variables_orig)
+        for d in self._scalar_instances(variables):
+            yield d
+#             yield dict((v, d[idx]) for idx, v in enumerate(variables))
 
     def _expand(self, formula, args):
         """Returns the list of elements from the Shannon expansion."""
         qvars = formula.quantifier_vars()
-        self._assert_vars_scalar(qvars)
         res = []
         f = args[0]
-        for subs in all_scalar_assignments(qvars, self.env):
-            res.append(f.substitute(subs))
+        for subs in self._all_scalar_assignments(qvars):
+            res.append(f.simple_substitute(subs))
         return res
 
     def walk_forall(self, formula, args, **kwargs):

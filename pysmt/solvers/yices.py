@@ -455,7 +455,8 @@ class YicesConverter(Converter, DagWalker):
         self.mgr = environment.formula_manager
         self._get_type = environment.stc.get_type
 
-        self.qelim = QuantifierEliminator(name="z3")
+#         self.qelim = QuantifierEliminator(name="z3")
+        self.qelim = QuantifierEliminator(name="scalarshannon")
         self.cache_qf = {}
 
         # Maps a Symbol into the corresponding internal yices instance
