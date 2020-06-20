@@ -46,8 +46,10 @@ class PrettyPrinter(HRPrinter):
             self.subs = {}
         else:
             self.subs = subs
+        self.mode = 1
 
-    def printer(self, f, threshold=None):
+    def printer(self, f, mode, threshold=None):
+        self.mode = mode
         self.walk(f, threshold=threshold)
 
     @handles(set(op.ALL_TYPES) - set([op.NOT, op.OR, op.BOOL_CONSTANT]))
@@ -97,7 +99,7 @@ class PrettyPrinter(HRPrinter):
             # Smarties contains a string.
             # In the future, we could allow for arbitrary function calls
             self.write(self.subs[formula])
-        else:
+        elif self.mode == 1:
             args = formula.args()
             arg_ant = []
             arg_con = []
@@ -114,8 +116,7 @@ class PrettyPrinter(HRPrinter):
                     arg_con.append(Not(arg_ant[i]))
                 argn = Implies(arg_ant[0], Or(arg_con))
                 return self.walk(argn)
-            else:
-                return HRPrinter.super(self, formula)
+        return HRPrinter.super(self, formula)
     
     @handles(set([op.BOOL_CONSTANT]))
     def smart_walk_bool_constant(self, formula):
@@ -126,11 +127,11 @@ class PrettyPrinter(HRPrinter):
 
 # EOC SmartPrinter
 
-def pretty_serialize(formula, subs=None, threshold=None):
+def pretty_serialize(formula, mode=1, subs=None, threshold=None):
     """Creates and calls a SmartPrinter to perform smart serialization."""
     buf = cStringIO()
     p = PrettyPrinter(buf, subs=subs)
-    p.printer(formula, threshold=threshold)
+    p.printer(formula, mode=mode, threshold=threshold)
     res = buf.getvalue()
     buf.close()
     return res

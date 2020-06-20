@@ -95,6 +95,13 @@ class HRPrinter(TreeWalker):
                             prefix = str(ft)
                             prefix = prefix[0]
                             name = prefix.upper() + suffix
+                elif name.startswith("Q:"):
+                    prefix = name.rstrip('1234567890')
+                    suffix = name[len(prefix):]
+                    if prefix.endswith(":i:"):
+                        prefix = str(ft)
+                        prefix = prefix[0]
+                        name = prefix.upper() + suffix
             self.write(name)
         else:
 #             self.write(quote(formula.symbol_name(), style="'"))

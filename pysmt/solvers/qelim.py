@@ -211,18 +211,33 @@ class ScalarShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker)
 
     def _expand(self, formula, args):
         """Returns the list of elements from the Shannon expansion."""
-        qvars = formula.quantifier_vars()
+        qvarsEnum = set()
+        qvarsRem = set()
+        for v in formula.quantifier_vars():
+            if v.symbol_type().is_enum_type():
+               qvarsEnum.add(v)
+            else:
+                qvarsRem.add(v)
+                 
         res = []
         f = args[0]
-        for subs in self._all_scalar_assignments(qvars):
+        for subs in self._all_scalar_assignments(qvarsEnum):
             res.append(f.simple_substitute(subs))
-        return res
+        return qvarsRem, res
 
     def walk_forall(self, formula, args, **kwargs):
-        return self.mgr.And(self._expand(formula, args))
+        qvarsRem, instances = self._expand(formula, args)
+        res = self.mgr.And(instances)
+        if len(qvarsRem) != 0:
+            res = self.mgr.ForAll(qvarsRem, res)
+        return res
 
     def walk_exists(self, formula, args, **kwargs):
-        return self.mgr.Or(self._expand(formula, args))
+        qvarsRem, instances = self._expand(formula, args)
+        res = self.mgr.Or(instances)
+        if len(qvarsRem) != 0:
+            res = self.mgr.Exists(qvarsRem, res)
+        return res
 
     def _exit(self):
         pass
