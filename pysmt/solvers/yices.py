@@ -322,12 +322,15 @@ class YicesSolver(IncrementalTrackingSolver, UnsatCoreSolver,
             
     @clear_pending_pop
     def _solve(self, assumptions=None):
+        count = 0
         if assumptions is not None:
             bool_ass = []
             other_ass = []
+            assert(len(self.yices_assumptions) == 0)
             for x in assumptions:
                 if x.is_literal():
                     self.yices_assumptions.append(self.get_term(x))
+                    count += 1
                 else:
                     other_ass.append(x)
 
@@ -346,7 +349,11 @@ class YicesSolver(IncrementalTrackingSolver, UnsatCoreSolver,
         if self.model is not None:
             yicespy.yices_free_model(self.model)
             self.model = None
-
+        
+        if count != 0:
+            for i in range(count):
+               self.yices_assumptions.pop()
+            
         sres = 'unknown'
         assert out in [STATUS_SAT, STATUS_UNSAT, STATUS_UNKNOWN]
         if out == STATUS_UNKNOWN:
