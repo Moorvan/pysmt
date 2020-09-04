@@ -24,6 +24,7 @@ these operators.
 from itertools import chain
 from six.moves import xrange
 
+SORT_SUFFIX = ":s"
 
 ALL_TYPES = list(xrange(0,67))
 

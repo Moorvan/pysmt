@@ -81,7 +81,7 @@ class HRPrinter(TreeWalker):
             name = formula.symbol_name()
             if formula.symbol_type().is_function_type():
                     prefix = name.rstrip('1234567890')
-                    if prefix.endswith(":e"):
+                    if prefix.endswith(op.SORT_SUFFIX):
                         name = prefix[:-2]
             else:
                 ft = formula.symbol_type()
@@ -89,8 +89,8 @@ class HRPrinter(TreeWalker):
                     if formula not in ft.domain:
                         prefix = name.rstrip('1234567890')
                         suffix = name[len(prefix):]
-                        if prefix.endswith(":e"):
-                            name = name[0:prefix.find(":")]
+                        if prefix.endswith(op.SORT_SUFFIX):
+                            name = name[0:prefix.rfind(":")]
                         elif name.startswith("Q:") and prefix.endswith(":"):
                             prefix = str(ft)
                             prefix = prefix[0]

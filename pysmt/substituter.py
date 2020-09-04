@@ -400,7 +400,7 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
     def set_ssubs(self, ssubs, idx, has_inf_sort):
         self.ssubstitutions = ssubs
         self.has_inf_sort = has_inf_sort
-        self.esuffix = ":e" + str(idx)
+        self.esuffix = op.SORT_SUFFIX + str(idx)
 
     def get_fkey(self, formula):
         return formula
@@ -455,7 +455,7 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
     def fsymbol_name(self, name, isFunc):
         if self.has_inf_sort:
             prefix = name.rstrip('1234567890')
-            if prefix.endswith(":e"):
+            if prefix.endswith(op.SORT_SUFFIX):
                 return prefix[:-2]
             elif not isFunc and prefix.endswith(":i"):
                 return name
@@ -463,7 +463,7 @@ class FiniteSubstituter(pysmt.walkers.IdentityDagWalker):
                 if prefix.endswith(":"):
                     suffix = name[len(prefix):]
                     prefix = prefix[:-1].rstrip('1234567890')
-                    if prefix.endswith(":e"):
+                    if prefix.endswith(op.SORT_SUFFIX):
                         prefix_new = prefix[:-2] + ":i"
                         name_new = prefix_new + ":" + suffix
                         return name_new
