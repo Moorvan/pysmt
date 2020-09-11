@@ -578,7 +578,8 @@ class Z3Converter(Converter, DagWalker):
 
     def quantifier_free(self, formula):
         term = self.convert(formula)
-#         return term
+        if not z3.is_bool(term):
+            return term
         if term in self.cache_qf:
             return self.cache_qf[term]
         simplifier = z3.Tactic('simplify')
