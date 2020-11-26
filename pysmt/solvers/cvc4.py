@@ -104,8 +104,16 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
 
         self.reset_assertions()
         self.converter = CVC4Converter(environment, cvc4_exprMgr=self.em)
+        
+        self.qf = False
         return
 
+    def enable_qf(self):
+        self.qf = True
+
+    def get_term(self, formula):
+        return self.converter.get_term(formula, self.qf)
+        
     def reset_assertions(self):
         del self.cvc4
         # CVC4's SWIG interface is not acquiring ownership of the
@@ -115,13 +123,27 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
         self.declarations = set()
         self.cvc4.setLogic(self.logic_name)
 
+    @clear_pending_pop
+    def _reset_named_assertions(self):
+        pass
+
     def declare_variable(self, var):
         raise NotImplementedError
 
-    def add_assertion(self, formula, named=None):
+    @clear_pending_pop
+    def _add_assertion(self, formula, named=None):
         self._assert_is_boolean(formula)
-        term = self.converter.convert(formula)
-        self.cvc4.assertFormula(term)
+        term = self.get_term(formula)
+        if (named is not None) and (self.options.unsat_cores_mode is not None):
+            # TODO: IF unsat_cores_mode is all, then we add this fresh variable.
+            # Otherwise, we should track this only if it is named.
+            key = self.mgr.FreshSymbol(template="_assertion_%d")
+            tkey = self.get_term(key)
+            key2term = self.em.mkExpr(CVC4.IMPLIES, tkey, term)
+            self.cvc4.assertFormula(key2term, inUnsatCore=False)
+            self.cvc4.assertFormula(tkey, inUnsatCore=True)
+        else:
+            self.cvc4.assertFormula(term, inUnsatCore=False)
         return
 
     def get_model(self):
@@ -133,10 +155,13 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
                 assignment[s] = v
         return EagerModel(assignment=assignment, environment=self.environment)
 
+    def _set_timeout(self, timeout):
+        raise NotImplementedError
+            
     def solve(self, assumptions=None):
         if assumptions is not None:
             conj_assumptions = self.environment.formula_manager.And(assumptions)
-            cvc4_assumption = self.converter.convert(conj_assumptions)
+            cvc4_assumption = self.get_term(conj_assumptions)
             res = self.cvc4.checkSat(cvc4_assumption)
         else:
             try:
@@ -147,12 +172,54 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
         # Convert returned type
         res_type = res.isSat()
         if res_type == CVC4.Result.SAT_UNKNOWN:
+            print(self.cvc4.whyUnknown())
             raise SolverReturnedUnknownResultError()
         else:
             return res_type == CVC4.Result.SAT
         return
 
-    def push(self, levels=1):
+    def get_unsat_core(self):
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        set of formulae"""
+        return self.get_named_unsat_core().values()
+
+    def _named_assertions_map(self):
+        if self.options.unsat_cores_mode is not None:
+            return dict((t[0], (t[1],t[2])) for t in self.named_assertions)
+        return None
+
+    def get_named_unsat_core(self):
+        """After a call to solve() yielding UNSAT, returns the unsat core as a
+        dict of names to formulae"""
+        if self.options.unsat_cores_mode is None:
+            raise SolverNotConfiguredForUnsatCoresError
+
+        if self.last_result is not False:
+            raise SolverStatusError("The last call to solve() was not" \
+                                    " unsatisfiable")
+
+        if self.last_command != "solve":
+            raise SolverStatusError("The solver status has been modified by a" \
+                                    " '%s' command after the last call to" \
+                                    " solve()" % self.last_command)
+
+        assumptions = self.cvc4.getUnsatCore()
+        pysmt_assumptions = set(self.converter.back(t) for t in assumptions)
+
+        res = {}
+        n_ass_map = self._named_assertions_map()
+        cnt = 0
+        for key in pysmt_assumptions:
+            if key in n_ass_map:
+                (name, formula) = n_ass_map[key]
+                if name is None:
+                    name = "_a_%d" % cnt
+                    cnt += 1
+                res[name] = formula
+        return res
+
+    @clear_pending_pop
+    def _push(self, levels=1):
         if not self.options.incremental:
             # The exceptions from CVC4 are not raised correctly
             # (probably due to the wrapper)
@@ -163,7 +230,8 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
             self.cvc4.push()
         return
 
-    def pop(self, levels=1):
+    @clear_pending_pop
+    def _pop(self, levels=1):
         for _ in xrange(levels):
             self.cvc4.pop()
         return
@@ -180,7 +248,7 @@ class CVC4Solver(Solver, SmtLibBasicSolver, SmtLibIgnoreMixin):
 
     def get_value(self, item):
 #         self._assert_no_function_type(item)
-        term = self.converter.convert(item)
+        term = self.get_term(item)
         cvc4_res = self.cvc4.getValue(term)
         res = self.converter.back(cvc4_res)
         if self.environment.stc.get_type(item).is_real_type() and \
@@ -217,12 +285,35 @@ class CVC4Converter(Converter, DagWalker):
         self.stringType = cvc4_exprMgr.stringType()
 
         self._cvc4Sorts = {}
+        self._cvc4EnumSorts = {}
+        self._cvc4EnumConsts = {}
 
         self.declared_vars = {}
         self.backconversion = {}
         self.mgr = environment.formula_manager
         self._get_type = environment.stc.get_type
+
+        self.qelim = QuantifierEliminator(name="scalarshannon")
+        self.cache_qf = {}
         return
+
+    def quantifier_free(self, formula):
+        if formula in self.cache_qf:
+            return self.cache_qf[formula]
+        formulaqf = self.qelim.eliminate_quantifiers(formula)
+#         formulaqf = self.qelim.eliminate_quantifiers(formula).simplify()
+        res = self.convert(formulaqf)
+        self.cache_qf[formula] = res
+#         print("q : %s" % term.serialize())
+#         print("qf: %s" % res.serialize())
+#         assert(0)
+        return res
+
+    def get_term(self, formula, qf):
+        if qf:
+            return self.quantifier_free(formula)
+        else:
+            return self.convert(formula)
 
     def cvc4Sort(self, name):
         """Return the cvc4 Sort for the given name."""
@@ -262,6 +353,11 @@ class CVC4Converter(Converter, DagWalker):
                 res = self.mgr.BV(int(v), width)
             elif expr.getType().isString():
                 v = expr.getConstString()
+                res = self.mgr.String(v.toString())
+            elif expr.getType().isDatatype():
+                v = expr.getConstDatatypeIndexConstant()
+                #todo
+                assert(0)
                 res = self.mgr.String(v.toString())
             elif expr.getType().isArray():
                 const_ = expr.getConstArrayStoreAll()

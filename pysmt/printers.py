@@ -93,14 +93,16 @@ class HRPrinter(TreeWalker):
                             name = name[0:prefix.rfind(":")]
                         elif name.startswith("Q:") and prefix.endswith(":"):
                             prefix = str(ft)
-                            prefix = prefix[0]
+#                            prefix = prefix[0]
+                            prefix = prefix[0:prefix.find(":")]
                             name = prefix.upper() + suffix
                 elif name.startswith("Q:"):
                     prefix = name.rstrip('1234567890')
                     suffix = name[len(prefix):]
                     if prefix.endswith(":i:"):
                         prefix = str(ft)
-                        prefix = prefix[0]
+#                        prefix = prefix[0]
+                        prefix = prefix[0:prefix.find(":")]
                         name = prefix.upper() + suffix
             self.write(name)
         else:
