@@ -373,6 +373,9 @@ class Z3Solver(IncrementalTrackingSolver, UnsatCoreSolver,
     def print_query(self, f):
         f.write(self.z3.to_smt2())
 
+    def reason_unknown(self):
+        return self.z3.reason_unknown()
+
 BOOLREF_SET = op.BOOL_OPERATORS | op.RELATIONS
 ARITHREF_SET = op.IRA_OPERATORS
 BITVECREF_SET = op.BV_OPERATORS

@@ -289,6 +289,9 @@ class Solver(object):
     def print_query(self, f):
         raise NotImplementedError
 
+    def reason_unknown(self):
+        raise NotImplementedError
+
 
 class IncrementalTrackingSolver(Solver):
     """A solver that keeps track of the asserted formulae
