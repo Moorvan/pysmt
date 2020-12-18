@@ -40,7 +40,7 @@ INSTALLERS = [
     Installer(Z3Installer,      "4.8.9",
               {}),
     Installer(YicesInstaller,   "2.6.2",
-              {"yicespy_version": "6cedc45460aeeec395742fb347b0b066c8400904"}),
+              {"yicespy_version": "f2661c15f4a909a45650247bac3131edeb1597fa"}),
     Installer(BtorInstaller,    "3.0.1-pre",
               {"git_version" : "f689fbbfe820392d35e26be368f9d87d2dbdb037"}),
     Installer(PicoSATInstaller, "965",
