@@ -222,7 +222,7 @@ class ScalarShannonQuantifierEliminator(QuantifierEliminator, IdentityDagWalker)
         res = []
         f = args[0]
         for subs in self._all_scalar_assignments(qvarsEnum):
-            res.append(f.simple_substitute(subs))
+            res.append(f.variable_substitute(subs))
         return qvarsRem, res
 
     def walk_forall(self, formula, args, **kwargs):

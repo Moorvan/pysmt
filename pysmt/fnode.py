@@ -159,6 +159,14 @@ class FNode(object):
         """
         return _env().substituter.simple_substitute(self, subs=subs)
 
+    def variable_substitute(self, subs):
+        """Return a formula in which subformula have been substituted.
+
+        subs is a dictionary mapping terms to be subtituted with their
+        substitution.
+        """
+        return _env().substituter.variable_substitute(self, subs=subs)
+
     def fsubstitute(self):
         """Return a formula in which subformula have been substituted.
 

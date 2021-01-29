@@ -75,6 +75,7 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
             substitutions = kwargs["substitutions"]
             ssubstitutions = kwargs["ssubstitutions"]
             simplemode = kwargs["simplemode"]
+            boolmode = kwargs["boolmode"]
             new_subs = {}
             if simplemode:
                 new_subs = substitutions
@@ -90,7 +91,7 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
             # 2. We apply the substitution on the quantifier body with
             #    the new 'reduced' map
             sub = self.__class__(self.env)
-            res_formula = sub.substitute_helper(formula.arg(0), new_subs, ssubstitutions, simplemode)
+            res_formula = sub.substitute_helper(formula.arg(0), new_subs, ssubstitutions, simplemode, boolmode)
 
             # 3. We invoke the relevant function (walk_exists or
             #    walk_forall) to compute the substitution
@@ -105,13 +106,16 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
                                                                          formula,
                                                                          **kwargs)
 
+    def variable_substitute(self, formula, subs, ssubs=None):
+        return self.substitute_helper(formula, subs, ssubs, simple=True, bmode=True)
+        
     def simple_substitute(self, formula, subs, ssubs=None):
-        return self.substitute_helper(formula, subs, ssubs, simple=True)
+        return self.substitute_helper(formula, subs, ssubs, simple=True, bmode=False)
         
     def substitute(self, formula, subs, ssubs=None):
-        return self.substitute_helper(formula, subs, ssubs, simple=False)
+        return self.substitute_helper(formula, subs, ssubs, simple=False, bmode=False)
         
-    def substitute_helper(self, formula, subs, ssubs=None, simple=False):
+    def substitute_helper(self, formula, subs, ssubs, simple, bmode):
         """Replaces any subformula in formula with the definition in subs."""
 
         # Check that formula is a term
@@ -136,8 +140,7 @@ class Substituter(pysmt.walkers.IdentityDagWalker):
             if v not in self.manager:
                 raise PysmtTypeError(
                     "Value %d does not belong to the Formula Manager." % i)
-
-        res = self.walk(formula, substitutions=subs, ssubstitutions=ssubs, simplemode=simple)
+        res = self.walk(formula, substitutions=subs, ssubstitutions=ssubs, simplemode=simple, boolmode=bmode)
         return res
 
 
@@ -149,7 +152,7 @@ class MGSubstituter(Substituter):
     def __init__(self, env):
         Substituter.__init__(self, env=env)
 
-    @handles(set(op.ALL_TYPES) - op.QUANTIFIERS)
+    @handles(set(op.ALL_TYPES) - op.QUANTIFIERS - frozenset([op.FUNCTION]))
     def walk_identity_or_replace(self, formula, args, **kwargs):
         """
         If the formula appears in the substitution, return the substitution.
@@ -160,6 +163,25 @@ class MGSubstituter(Substituter):
             res = substitutions[formula]
         else:
             res = Substituter.super(self, formula, args=args, **kwargs)
+        return res
+
+    def walk_function(self, formula, args, **kwargs):
+        """
+        If the formula appears in the substitution, return the substitution.
+        Otherwise, rebuild the formula by calling the IdentityWalker.
+        """
+        substitutions = kwargs['substitutions']
+        boolmode = kwargs['boolmode']
+        if formula in substitutions:
+            res = substitutions[formula]
+        else:
+            res = Substituter.super(self, formula, args=args, **kwargs)
+#             if boolmode:
+#                 s = res.function_name()
+#                 ret_type = s.symbol_type().return_type
+#                 if ret_type.is_bool_type():
+#                     name = "%s_var" % str(res)
+#                     res = self.mgr.Symbol(name, ret_type)
         return res
 
     def walk_forall(self, formula, args, **kwargs):
