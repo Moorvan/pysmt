@@ -67,6 +67,8 @@ class Z3Installer(SolverInstaller):
             libfiles += glob.glob(bpath + '/*.dll')
             libfiles += glob.glob(bpath + '/*.lib')
 
+        bpath = "/Users/yuechen/.smt_solvers/z3/z3-4.12.2-arm64-osx-11.0/bin"
+
         SolverInstaller.mv(os.path.join(bpath, "python/z3"), self.bindings_dir)
 
         # z3 will check for shared libraries in z3/lib, before builtins.Z3_LIB_DIRS,

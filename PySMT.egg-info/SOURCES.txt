@@ -1,5 +1,6 @@
 LICENSE
 MANIFEST.in
+NOTICE
 README.rst
 setup.py
 PySMT.egg-info/PKG-INFO
@@ -29,6 +30,7 @@ pysmt/logics.py
 pysmt/operators.py
 pysmt/oracles.py
 pysmt/parsing.py
+pysmt/pretty_printer.py
 pysmt/printers.py
 pysmt/rewritings.py
 pysmt/shortcuts.py

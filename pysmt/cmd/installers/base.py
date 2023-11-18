@@ -163,6 +163,8 @@ class SolverInstaller(object):
     @staticmethod
     def do_download(url, file_name):
         """Downloads the given url into the given file name"""
+
+        url = "https://github.com/Z3Prover/z3/releases/download/z3-4.12.2/z3-4.12.2-arm64-osx-11.0.zip"
         u = six.moves.urllib.request.urlopen(url)
         f = open(file_name, 'wb')
         meta = u.info()
