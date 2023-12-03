@@ -453,6 +453,7 @@ class SmtLibParser(object):
                          smtcmd.CHECK_SAT_ASSUMING : self._cmd_check_sat_assuming,
                          smtcmd.DECLARE_CONST : self._cmd_declare_const,
                          smtcmd.DECLARE_FUN : self._cmd_declare_fun,
+                         smtcmd.DECLARE_DATATYPE: self._cmd_declare_datatype,
                          smtcmd.DECLARE_SORT: self._cmd_declare_sort,
                          smtcmd.DEFINE_FUN : self._cmd_define_fun,
                          smtcmd.DEFINE_FUNS_REC : self._cmd_define_funs_rec,
@@ -619,6 +620,10 @@ class SmtLibParser(object):
         """Returns the PySMT variable corresponding to a declaration"""
         return self.env.formula_manager.Symbol(name=name,
                                                typename=type_name)
+
+    def _get_enum_item(self, name, type_name):
+        """Returns the PySMT variable corresponding to a declaration"""
+        return self.env.formula_manager.Const(value=name, type_=type_name)
 
     def _get_quantified_var(self, name, type_name):
         """Returns the PySMT variable corresponding to a declaration"""
@@ -1011,6 +1016,32 @@ class SmtLibParser(object):
                                    tokens.pos_info)
         return var
 
+    def consume_opening_closing(self, tokens, command):
+        """Parses a single '()' from the tokens"""
+        self.consume_opening(tokens, command)
+        self.consume_closing(tokens, command)
+
+
+    def parse_enum(self, tokens, command):
+        """Parses a list of types from the tokens without consuming the opening"""
+        self.consume_opening(tokens, command)
+        self.consume_opening(tokens, command)
+        current = tokens.consume("Unexpected end of stream in %s command." % \
+                                         command)
+        type_name = current
+        current = tokens.consume("Unexpected end of stream in %s command." % command);
+        items = []
+        while current != ")":
+            items.append(current)
+            current = tokens.consume("Unexpected end of stream in %s command." % \
+                                             command)
+        self.consume_closing(tokens, command)
+        enum_def = self.env.type_manager.EnumType(type_name, items)
+        self.cache.bind(type_name, enum_def)
+        for item in items:
+            self.cache.bind(item, self._get_enum_item(item, enum_def))
+        return enum_def
+
     def parse_params(self, tokens, command):
         """Parses a list of types from the tokens"""
         self.consume_opening(tokens, command)
@@ -1180,6 +1211,13 @@ class SmtLibParser(object):
         params = self.parse_expr_list(tokens, current)
         self.consume_closing(tokens, current)
         return SmtLibCommand(current, params)
+
+    def _cmd_declare_datatype(self, current, tokens):
+        """(declare-datatypes () ((<symbol> <symbol>*)))"""
+        self.consume_opening_closing(tokens, current)
+        enum_def = self.parse_enum(tokens, current)
+        self.consume_closing(tokens, current)
+        return SmtLibCommand(current, enum_def)
 
     def _cmd_declare_fun(self, current, tokens):
         """(declare-fun <symbol> (<sort>*) <sort>)"""
