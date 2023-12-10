@@ -459,8 +459,8 @@ class Z3Converter(Converter, DagWalker):
         self.z3BoolSort = z3.BoolSort(self.ctx)
         self.z3IntSort  = z3.IntSort(self.ctx)
         self._z3ArraySorts = {}
-        self._z3EnumSorts = {}
-        self._z3EnumConsts = {}
+        self._z3EnumSorts = environment.enum_sorts_from_z3
+        self._z3EnumConsts = environment.enum_consts_from_z3
         self._z3BitVecSorts = {}
         self._z3Sorts = {}
         # Unique reference to Function Declaration

@@ -79,6 +79,9 @@ class Environment(object):
         self._type_manager = self.TypeManagerClass(self)
         self._fsubstituter = self.FiniteSubstituterClass(self)
 
+        self.enum_sorts_from_z3 = {}
+        self.enum_consts_from_z3 = {}
+
         self._factory = None
         # Configurations
         self.enable_infix_notation = False
